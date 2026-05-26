@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Tracely — Welcome</title>
+<meta name="description" content="Tracely helps kids learn to draw, trace and color shapes, fruits and vegetables. Earn points, unlock badges and have fun learning — free for kids!"/>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700;800&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Nunito',sans-serif;background:#0f1117;color:#e8eaf6;min-height:100vh;
+  display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:#1e2235;border:1.5px solid #2e3250;border-radius:24px;
+  padding:40px 36px;width:100%;max-width:400px;text-align:center}
+.logo{font-family:'Fredoka One',cursive;font-size:2.4rem;color:#f7c948;margin-bottom:6px}
+.sub{color:#9aa0c4;font-size:.9rem;margin-bottom:28px}
+.tabs{display:flex;background:#23273a;border-radius:12px;padding:4px;margin-bottom:24px}
+.tab{flex:1;padding:10px;border:none;background:transparent;color:#9aa0c4;
+  border-radius:9px;cursor:pointer;font-family:'Nunito',sans-serif;font-weight:700;font-size:.9rem}
+.tab.on{background:#7c6af7;color:#fff}
+.panel{display:none;text-align:left}
+.panel.on{display:block}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:.8rem;font-weight:700;color:#9aa0c4;margin-bottom:5px}
+.field input{width:100%;padding:11px 14px;background:#23273a;border:1.5px solid #2e3250;
+  border-radius:10px;color:#e8eaf6;font-size:.95rem;outline:none;font-family:inherit}
+.field input:focus{border-color:#7c6af7}
+.btn-main{width:100%;padding:13px;background:linear-gradient(135deg,#7c6af7,#5a4fcf);
+  border:none;border-radius:12px;color:#fff;font-weight:800;font-size:1rem;
+  cursor:pointer;margin-top:6px;font-family:inherit}
+.btn-main:hover{opacity:.9}
+.err{background:rgba(244,67,54,.12);border:1px solid rgba(244,67,54,.3);
+  border-radius:8px;padding:9px 13px;color:#f44336;font-size:.83rem;margin-bottom:12px;display:none}
+.divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:#9aa0c4;font-size:.82rem}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:#2e3250}
+.btn-guest{display:block;width:100%;padding:14px;background:#23273a;
+  border:2px solid #2e3250;border-radius:12px;color:#e8eaf6;
+  font-weight:800;font-size:1rem;cursor:pointer;font-family:inherit;
+  text-decoration:none;text-align:center}
+.btn-guest:hover{border-color:#f7c948;color:#f7c948}
+.hint{color:#9aa0c4;font-size:.75rem;margin-top:8px;text-align:center}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">✏️ Tracely</div>
+  <div class="sub">Learn to draw shapes, fruits &amp; letters!</div>
+
+  <div class="tabs">
+    <button type="button" class="tab on" onclick="show('login',this)">Log In</button>
+    <button type="button" class="tab"    onclick="show('signup',this)">Sign Up</button>
+  </div>
+
+  <div class="panel" id="p-signup">
+    <div class="err" id="signup-err"></div>
+    <div class="field"><label>Username</label>
+      <input type="text" id="su" placeholder="Choose a username"/></div>
+    <div class="field"><label>Password</label>
+      <input type="password" id="sp" placeholder="Choose a password"/></div>
+    <div class="field"><label>Confirm Password</label>
+      <input type="password" id="sc" placeholder="Repeat password"/></div>
+    <button type="button" class="btn-main" onclick="doSignup()">🌟 Create Account</button>
+  </div>
+
+  <div class="divider">or</div>
+
+  <button type="button" class="btn-guest" onclick="playAsGuest()">👤 Play as Guest</button>
+  <p class="hint">Guest progress saved on this device only</p>
+</div>
+
+<script>
+function isFlask() {
+  return window.location.port === '5050';
+}
+
+function show(tab, el) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('p-' + tab).classList.add('on');
+}
+
+/* ── Guest login ── */
+async function playAsGuest() {
+  if (isFlask()) {
+    try {
+      const r = await fetch('/api/guest', { method: 'POST', credentials: 'include' });
+      const d = await r.json();
+      if (d.ok) {
+        window.location.href = '/app';
+      } else {
+        window.location.href = '/app?guest=1';
+      }
+    } catch(e) {
+      window.location.href = '/app?guest=1';
+    }
+  } else {
+    localStorage.setItem('drawbook_guest', '1');
+    localStorage.setItem('drawbook_user', JSON.stringify({ username: 'Guest', guest: true }));
+    window.location.href = 'index.html';
+  }
+}
+
+/* ── Login ── */
+async function doLogin() {
+  const u   = document.getElementById('lu').value.trim();
+  const p   = document.getElementById('lp').value;
+  const err = document.getElementById('login-err');
+  err.style.display = 'none';
+  if (!u || !p) { err.textContent = 'Please fill in all fields'; err.style.display = 'block'; return; }
+
+  if (!isFlask()) {
+    const users = JSON.parse(localStorage.getItem('drawbook_users') || '{}');
+    if (users[u] && users[u] === p) {
+      localStorage.setItem('drawbook_user', JSON.stringify({ username: u, guest: false }));
+      window.location.href = 'index.html';
+    } else {
+      err.textContent = 'Account not found. Please sign up first.';
+      err.style.display = 'block';
+    }
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    const d = await r.json();
+    if (d.ok) { window.location.href = '/app'; }
+    else { err.textContent = d.error || 'Login failed'; err.style.display = 'block'; }
+  } catch(e) { err.textContent = 'Cannot reach server'; err.style.display = 'block'; }
+}
+
+/* ── Signup ── */
+async function doSignup() {
+  const u   = document.getElementById('su').value.trim();
+  const p   = document.getElementById('sp').value;
+  const c   = document.getElementById('sc').value;
+  const err = document.getElementById('signup-err');
+  err.style.display = 'none';
+  if (!u || !p || !c) { err.textContent = 'Please fill in all fields'; err.style.display = 'block'; return; }
+  if (p !== c)         { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
+  if (p.length < 4)    { err.textContent = 'Password must be at least 4 characters'; err.style.display = 'block'; return; }
+
+  if (!isFlask()) {
+    const users = JSON.parse(localStorage.getItem('drawbook_users') || '{}');
+    if (users[u]) { err.textContent = 'Username already taken'; err.style.display = 'block'; return; }
+    users[u] = p;
+    localStorage.setItem('drawbook_users', JSON.stringify(users));
+    localStorage.setItem('drawbook_user', JSON.stringify({ username: u, guest: false }));
+    window.location.href = 'index.html';
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/signup', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    const d = await r.json();
+    if (d.ok) { window.location.href = '/app'; }
+    else { err.textContent = d.error || 'Signup failed'; err.style.display = 'block'; }
+  } catch(e) { err.textContent = 'Cannot reach server'; err.style.display = 'block'; }
+}
+</script>
+</body>
+</html>
