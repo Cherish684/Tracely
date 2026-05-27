@@ -9,7 +9,7 @@ app = Flask(__name__,
             template_folder=os.path.join(BASE_DIR, 'templates'),
             static_folder=os.path.join(BASE_DIR, 'static'))
 
-app.config['SECRET_KEY']            = 'tracely-2025-secret'
+app.config['SECRET_KEY']            = os.environ.get('SECRET_KEY', 'tracely-2025-secret')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 

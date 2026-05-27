@@ -70,7 +70,7 @@ body{font-family:'Nunito',sans-serif;background:#0f1117;color:#e8eaf6;min-height
 
 <script>
 function isFlask() {
-  return window.location.port === '5050';
+  return window.location.port === '5050' || window.location.protocol === 'https:' || window.location.port === '';
 }
 
 function show(tab, el) {
@@ -97,7 +97,7 @@ async function playAsGuest() {
   } else {
     localStorage.setItem('drawbook_guest', '1');
     localStorage.setItem('drawbook_user', JSON.stringify({ username: 'Guest', guest: true }));
-    window.location.href = 'index.html';
+    window.location.href = '/app?guest=1';
   }
 }
 
