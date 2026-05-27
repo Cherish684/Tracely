@@ -445,11 +445,9 @@ function launchItem() {
   } else {
     fetch(FLASK_URL+`/launch?item=${item.id}`, {credentials:'include'})
       .then(r=>r.json())
-      .then(d=>{
-        if(d.launched){ showToast(`🎮 Launching ${item.name}!`); pollSignal(); }
-        else { showToast('⚠️ Server offline — using browser mode'); startMobileDrawing(item); }
-      })
-      .catch(()=>{ startMobileDrawing(item); });
+      .then(d=>{ if(d.launched){showToast(`🎮 Launching ${item.name}!`);pollSignal();}
+                 else showToast(`❌ ${d.error||'Launch failed'}`); })
+      .catch(()=>showToast('⚠️ Server offline! Run python app.py first.'));
   }
 }
 
@@ -720,6 +718,7 @@ function onHandResults(results) {
 
   if (gesture==='DRAWING') {
     mobileDrawing = true;
+    mobileDrawnPts.push({x: tx, y: ty});
     checkDotReached(tx, ty, canvas.width, canvas.height);
   } else if (gesture==='FIST') {
     mobileDrawing = false;
@@ -1003,10 +1002,21 @@ function setupTouchFallback() {
   eraserBar.id = 'mobile-eraser-bar';
   eraserBar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;display:flex;gap:10px;padding:10px 14px;background:rgba(0,0,0,0.6);z-index:10;justify-content:center;align-items:center;';
   eraserBar.innerHTML = `
+    <button id="eraser-btn" style="padding:10px 22px;border:2px solid #fff;border-radius:12px;background:transparent;color:#fff;font-weight:800;font-size:.9rem;font-family:inherit;cursor:pointer;">
+      🔄 Reset
+    </button>
     <button id="clear-btn" style="padding:10px 22px;border:2px solid rgba(255,255,255,0.4);border-radius:12px;background:transparent;color:rgba(255,255,255,0.7);font-weight:800;font-size:.9rem;font-family:inherit;cursor:pointer;">
       🗑️ Start Over
     </button>`;
   document.getElementById('mobile-canvas-wrap').appendChild(eraserBar);
+
+  document.getElementById('eraser-btn').onclick = () => {
+    mobileCurrentDot = 0;
+    mobileAnimProgress = 0;
+    mobileAnimating = false;
+    redrawTouch();
+    showToast('🔄 Reset — tap the first dot!');
+  };
 
   document.getElementById('clear-btn').onclick = () => {
     mobileCurrentDot = 0;
@@ -1036,15 +1046,13 @@ function animateTouchGuide() {
 function finishTrace() {
   mobileStepTimes.trace = (performance.now()-mobileStepStart)/1000;
   const score = scoreTrace();
-  const dots = mobileItem ? getMobileGuideDots(mobileItem) : [];
-  const touchPassed = mobileTouchFallback && mobileCurrentDot >= Math.max(1, Math.floor(dots.length * 0.3));
-  if (touchPassed || score >= 30 || mobileDrawnPts.length>10) { 
+  if (score >= 30 || mobileDrawnPts.length>10) { 
     mobilePtsEarned += 10;
     document.getElementById('mhud-pts').textContent = `+${mobilePtsEarned}/30 pts`;
     showToast(`✏️ Trace score: ${score}% — Great job!`);
     mobileStep = 2;
     showMobileStep(2);
-  } else if (!mobileTouchFallback && mobileDrawnPts.length<5) {
+  } else if (mobileDrawnPts.length<5) {
     showToast('Try drawing the shape first! ✏️');
   } else {
 
