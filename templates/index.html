@@ -318,12 +318,25 @@
       <p style="font-size:.75rem;color:var(--text2);margin-top:8px">This only downloads once!</p>
     </div>
     <div class="mobile-palette" id="mobile-palette" style="display:none">
-      <p class="palette-title">Pinch 🤌 to pick a color, then pinch on the shape to fill!</p>
+      <p class="palette-title">🎨 Pick a color for your shape!</p>
+      <div id="suggested-color-row" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:.85rem;color:#9aa0c4;">
+        <span>Suggested:</span>
+        <span id="suggested-swatch" style="display:inline-block;width:22px;height:22px;border-radius:50%;border:2px solid #fff;"></span>
+        <span id="suggested-color-name" style="color:#e8eaf6;font-weight:700;"></span>
+      </div>
       <div class="palette-swatches" id="palette-swatches"></div>
+      <canvas id="color-preview-canvas" width="200" height="200"
+        style="display:block;margin:14px auto 0;border-radius:12px;"></canvas>
     </div>
     <div class="mobile-name-step" id="mobile-name-step" style="display:none">
       <p class="name-question">What did you draw? 🤔</p>
-      <button class="voice-name-btn" onclick="listenForName()">🎤 Voice Search</button>
+      <button class="voice-name-btn" onclick="listenForName()">🎤 Say the name</button>
+      <div style="display:flex;gap:8px;margin-top:10px;width:100%;max-width:320px;align-items:center;">
+        <input id="name-type-input" type="text" placeholder="Or type the name here…"
+          style="flex:1;padding:10px 12px;border-radius:10px;border:2px solid #2e3250;background:#23273a;color:#e8eaf6;font-size:1rem;font-family:inherit;outline:none;"
+          onkeydown="if(event.key==='Enter') checkTypedName()"/>
+        <button class="voice-name-btn" style="margin-top:0;padding:10px 16px;white-space:nowrap;" onclick="checkTypedName()">✅ Check</button>
+      </div>
       <div class="name-result" id="name-result"></div>
       <button class="name-skip-btn" onclick="skipNameStep()">Skip (for toddlers)</button>
     </div>

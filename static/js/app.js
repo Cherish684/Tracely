@@ -628,12 +628,12 @@ async function startMobileDrawing(item) {
   updateMobileHUD();
   showMobileStep(1);
 
-  const doneBtnCamera = document.getElementById('done-tracing-camera-btn');
-  if (!doneBtnCamera) {
+  const existingDoneBtn = document.getElementById('done-tracing-camera-btn');
+  if (!existingDoneBtn) {
     const db = document.createElement('button');
     db.id = 'done-tracing-camera-btn';
     db.className = 'voice-name-btn';
-    db.style.cssText = 'position:absolute;bottom:70px;left:50%;transform:translateX(-50%);z-index:10;';
+    db.style.cssText = 'position:absolute;bottom:70px;left:50%;transform:translateX(-50%);z-index:10;display:none;';
     db.textContent = '✅ Done Tracing!';
     db.onclick = finishTrace;
     document.getElementById('mobile-canvas-wrap').appendChild(db);
@@ -1082,7 +1082,7 @@ function showMobileStep(step) {
   document.getElementById('mobile-name-step').style.display = 'none';
   document.getElementById('mobile-canvas-wrap').style.display='block';
   const dtBtn = document.getElementById('done-tracing-camera-btn');
-  if (dtBtn) dtBtn.style.display = step === 1 ? 'block' : 'none';
+  if (dtBtn) dtBtn.style.display = (step === 1 && !mobileTouchFallback) ? 'block' : 'none';
 
   const overlay = document.getElementById('step-overlay');
   overlay.style.display='flex';
@@ -1118,6 +1118,7 @@ function stopCameraLoop() {
 }
 
 function listenForName() {
+  if (mobileNameCorrect) return;
   const SpeechRec = window.SpeechRecognition||window.webkitSpeechRecognition;
   if (!SpeechRec) { skipNameStep(); return; }
   const btn = document.querySelector('.voice-name-btn');
@@ -1144,7 +1145,9 @@ function listenForName() {
   r.onend  =()=>{ btn.disabled=false; };
   r.start();
 }
+
 function checkTypedName() {
+  if (mobileNameCorrect) return;
   const input = document.getElementById('name-type-input');
   const res = document.getElementById('name-result');
   if (!input || !mobileItem) return;
@@ -1153,14 +1156,15 @@ function checkTypedName() {
   if (typed === target) {
     res.textContent = '✅ Correct! Great job!';
     res.style.color = '#4caf50';
-    mobilePtsEarned += 10; mobileNameCorrect = true;
+    mobilePtsEarned += 10;
+    mobileNameCorrect = true;
     setTimeout(goToColorStep, 1200);
   } else {
-    res.textContent = `❌ Not quite! Try again.`;
+    res.textContent = `❌ Not quite! The answer is not "${input.value.trim()}" — try again.`;
     res.style.color = '#f44336';
+    input.value = '';
   }
 }
-
 function skipNameStep() {
   mobilePtsEarned += 5;
   mobileNameCorrect = true;
@@ -1173,6 +1177,14 @@ function goToColorStep() {
 }
 
 function buildPalette() {
+  // Show suggested color
+  if (mobileItem && mobileItem.color) {
+    const swatch = document.getElementById('suggested-swatch');
+    const label = document.getElementById('suggested-color-name');
+    const matchedColor = COLORS.find(c => c.hex.toLowerCase() === mobileItem.color.toLowerCase());
+    if (swatch) swatch.style.background = mobileItem.color;
+    if (label) label.textContent = matchedColor ? matchedColor.name : mobileItem.color;
+  }
   const wrap = document.getElementById('palette-swatches');
   wrap.innerHTML='';
   COLORS.forEach(c=>{
@@ -1207,21 +1219,25 @@ function drawColorPreview(hex) {
   ctx.clearRect(0, 0, w, h);
   const pts = getGuidePoints(mobileItem);
   if (!pts || !pts.length) return;
-  const scale = Math.min(w, h) / 400;
-  const ox = (w - 400 * scale) / 2;
-  const oy = (h - 400 * scale) / 2;
-  ctx.save();
-  ctx.translate(ox, oy);
-  ctx.scale(scale, scale);
+  const xs = pts.map(p=>p.x), ys = pts.map(p=>p.y);
+  const minX=Math.min(...xs), maxX=Math.max(...xs);
+  const minY=Math.min(...ys), maxY=Math.max(...ys);
+  const scaleX = (w-20)/(maxX-minX||1);
+  const scaleY = (h-20)/(maxY-minY||1);
+  const scale = Math.min(scaleX, scaleY);
+  const ox = (w - (maxX-minX)*scale)/2 - minX*scale;
+  const oy = (h - (maxY-minY)*scale)/2 - minY*scale;
   ctx.beginPath();
-  pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+  pts.forEach((p,i)=>{
+    const px = p.x*scale+ox, py = p.y*scale+oy;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  });
   ctx.closePath();
   ctx.fillStyle = hex;
   ctx.fill();
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 3 / scale;
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  ctx.lineWidth = 2;
   ctx.stroke();
-  ctx.restore();
 }
 function finishColor() {
   if (!mobileSelectedColor) { showToast('Pick a color first! 🎨'); return; }
