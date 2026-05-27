@@ -626,7 +626,6 @@ async function startMobileDrawing(item) {
   modal.style.display = 'flex';
   document.getElementById('mhud-item-name').textContent = item.name;
   updateMobileHUD();
-  showMobileStep(1);
 
   const existingDoneBtn = document.getElementById('done-tracing-camera-btn');
   if (!existingDoneBtn) {
@@ -638,6 +637,8 @@ async function startMobileDrawing(item) {
     db.onclick = finishTrace;
     document.getElementById('mobile-canvas-wrap').appendChild(db);
   }
+
+  showMobileStep(1);
 
   try {
     mobileStream = await navigator.mediaDevices.getUserMedia({
