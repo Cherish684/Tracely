@@ -445,9 +445,11 @@ function launchItem() {
   } else {
     fetch(FLASK_URL+`/launch?item=${item.id}`, {credentials:'include'})
       .then(r=>r.json())
-      .then(d=>{ if(d.launched){showToast(`🎮 Launching ${item.name}!`);pollSignal();}
-                 else showToast(`❌ ${d.error||'Launch failed'}`); })
-      .catch(()=>showToast('⚠️ Server offline! Run python app.py first.'));
+      .then(d=>{
+        if(d.launched){ showToast(`🎮 Launching ${item.name}!`); pollSignal(); }
+        else { showToast('⚠️ Server offline — using browser mode'); startMobileDrawing(item); }
+      })
+      .catch(()=>{ startMobileDrawing(item); });
   }
 }
 
@@ -1032,10 +1034,10 @@ function animateTouchGuide() {
 }
 
 function finishTrace() {
-  const dots = mobileItem ? getMobileGuideDots(mobileItem) : [];
-  const touchPassed = mobileTouchFallback && mobileCurrentDot >= Math.max(1, Math.floor(dots.length * 0.3));
   mobileStepTimes.trace = (performance.now()-mobileStepStart)/1000;
   const score = scoreTrace();
+  const dots = mobileItem ? getMobileGuideDots(mobileItem) : [];
+  const touchPassed = mobileTouchFallback && mobileCurrentDot >= Math.max(1, Math.floor(dots.length * 0.3));
   if (touchPassed || score >= 30 || mobileDrawnPts.length>10) { 
     mobilePtsEarned += 10;
     document.getElementById('mhud-pts').textContent = `+${mobilePtsEarned}/30 pts`;
