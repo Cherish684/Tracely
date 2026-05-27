@@ -626,17 +626,6 @@ async function startMobileDrawing(item) {
   updateMobileHUD();
   showMobileStep(1);
 
-  const doneBtnCamera = document.getElementById('done-tracing-camera-btn');
-  if (!doneBtnCamera) {
-    const db = document.createElement('button');
-    db.id = 'done-tracing-camera-btn';
-    db.className = 'voice-name-btn';
-    db.style.cssText = 'position:absolute;bottom:70px;left:50%;transform:translateX(-50%);z-index:10;';
-    db.textContent = '✅ Done Tracing!';
-    db.onclick = finishTrace;
-    document.getElementById('mobile-canvas-wrap').appendChild(db);
-  }
-
   try {
     mobileStream = await navigator.mediaDevices.getUserMedia({
       video:{facingMode:'user',width:{ideal:640},height:{ideal:480}}, audio:false
@@ -1079,8 +1068,6 @@ function showMobileStep(step) {
   document.getElementById('mobile-palette').style.display   = 'none';
   document.getElementById('mobile-name-step').style.display = 'none';
   document.getElementById('mobile-canvas-wrap').style.display='block';
-  const dtBtn = document.getElementById('done-tracing-camera-btn');
-  if (dtBtn) dtBtn.style.display = step === 1 ? 'block' : 'none';
 
   const overlay = document.getElementById('step-overlay');
   overlay.style.display='flex';
@@ -1142,23 +1129,6 @@ function listenForName() {
   r.onend  =()=>{ btn.disabled=false; };
   r.start();
 }
-function checkTypedName() {
-  const input = document.getElementById('name-type-input');
-  const res = document.getElementById('name-result');
-  if (!input || !mobileItem) return;
-  const typed = input.value.trim().toLowerCase();
-  const target = mobileItem.name.toLowerCase();
-  if (typed === target) {
-    res.textContent = '✅ Correct! Great job!';
-    res.style.color = '#4caf50';
-    mobilePtsEarned += 10; mobileNameCorrect = true;
-    setTimeout(goToColorStep, 1200);
-  } else {
-    res.textContent = `❌ Not quite! Try again.`;
-    res.style.color = '#f44336';
-  }
-}
-
 function skipNameStep() {
   mobilePtsEarned += 5;
   mobileNameCorrect = true;
@@ -1193,33 +1163,6 @@ function selectColor(hex, el) {
   document.querySelectorAll('.palette-swatch').forEach(s=>s.classList.remove('selected'));
   el.classList.add('selected');
   showToast(`🎨 ${COLORS.find(c=>c.hex===hex)?.name||'Color'} selected!`);
-  drawColorPreview(hex);
-}
-
-function drawColorPreview(hex) {
-  const canvas = document.getElementById('color-preview-canvas');
-  if (!canvas || !mobileItem) return;
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width = 200;
-  const h = canvas.height = 200;
-  ctx.clearRect(0, 0, w, h);
-  const pts = getGuidePoints(mobileItem);
-  if (!pts || !pts.length) return;
-  const scale = Math.min(w, h) / 400;
-  const ox = (w - 400 * scale) / 2;
-  const oy = (h - 400 * scale) / 2;
-  ctx.save();
-  ctx.translate(ox, oy);
-  ctx.scale(scale, scale);
-  ctx.beginPath();
-  pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
-  ctx.closePath();
-  ctx.fillStyle = hex;
-  ctx.fill();
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 3 / scale;
-  ctx.stroke();
-  ctx.restore();
 }
 function finishColor() {
   if (!mobileSelectedColor) { showToast('Pick a color first! 🎨'); return; }
