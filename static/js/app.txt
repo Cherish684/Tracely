@@ -440,15 +440,14 @@ function launchItem() {
   if (!currentItemId) return;
   const item = getItem(currentItemId);
   closeItemModal();
-  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (isLocal && !isMobile()) {
+  if (isMobile()) {
+    startMobileDrawing(item);
+  } else {
     fetch(FLASK_URL+`/launch?item=${item.id}`, {credentials:'include'})
       .then(r=>r.json())
       .then(d=>{ if(d.launched){showToast(`🎮 Launching ${item.name}!`);pollSignal();}
                  else showToast(`❌ ${d.error||'Launch failed'}`); })
       .catch(()=>showToast('⚠️ Server offline! Run python app.py first.'));
-  } else {
-    startMobileDrawing(item);
   }
 }
 
