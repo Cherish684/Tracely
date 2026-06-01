@@ -308,6 +308,7 @@ def complete_item():
     uid  = current_user_id()
     data = request.get_json(force=True) or {}
     item_id    = data.get('item')
+    pts_earned = data.get('points', 30)
     time_trace = data.get('time_trace', 0)
     time_name  = data.get('time_name',  0)
     time_color = data.get('time_color', 0)
@@ -315,12 +316,12 @@ def complete_item():
         conn = get_db()
         get_or_create_progress(conn, uid, item_id)
         conn.execute('''UPDATE progress SET
-            traced=1, named=1, colored=1, points=30,
+            traced=1, named=1, colored=1, points=?,
             time_trace=?, time_name=?, time_color=?
-            WHERE user_id=? AND item_id=?''', (time_trace, time_name, time_color, uid, item_id))
+            WHERE user_id=? AND item_id=?''', (pts_earned, time_trace, time_name, time_color, uid, item_id))
         conn.commit()
         conn.close()
-    signal = {'item': item_id, 'completed': True, 'points': 30, 'timestamp': time.time(),
+    signal = {'item': item_id, 'completed': True, 'points': pts_earned, 'timestamp': time.time(),
               'times': {'trace': time_trace, 'name': time_name, 'color': time_color}}
     with open(os.path.join(BASE_DIR, 'tracely_signal.json'), 'w') as f:
         json.dump(signal, f)

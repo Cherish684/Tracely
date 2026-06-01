@@ -143,55 +143,55 @@ def get_item_data(name):
         'circle': (
             [(0.5+0.35*math.cos(math.radians(a)), 0.5+0.35*math.sin(math.radians(a)))
              for a in range(0,360,30)],
-            True, (0,100,255), 'easy', 'shape', (0,100,255)
+            True, (0,100,255), 'easy', 'shape', (0,0,220)
         ),
         'square': (
             [(0.18,0.18),(0.82,0.18),(0.82,0.82),(0.18,0.82)],
-            True, (255,80,80), 'easy', 'shape', (255,80,80)
+            True, (255,80,80), 'easy', 'shape', (255,100,0)
         ),
         'triangle': (
             [(0.50,0.10),(0.90,0.85),(0.10,0.85)],
-            True, (0,215,255), 'easy', 'shape', (0,215,255)
+            True, (0,215,255), 'easy', 'shape', (0,230,255)
         ),
         'rectangle': (
             [(0.10,0.28),(0.90,0.28),(0.90,0.72),(0.10,0.72)],
-            True, (80,200,80), 'easy', 'shape', (80,200,80)
+            True, (80,200,80), 'easy', 'shape', (0,180,0)
         ),
         'star': (
-            _star_dots(), True, (0,215,255), 'medium', 'shape', (0,215,255)
+            _star_dots(), True, (0,215,255), 'medium', 'shape', (0,230,255)
         ),
         'heart': (
-            _heart_dots(), False, (0,80,255), 'medium', 'shape', (0,80,255)
+            _heart_dots(), False, (0,80,255), 'medium', 'shape', (0,0,220)
         ),
         'diamond': (
             [(0.50,0.08),(0.88,0.50),(0.50,0.92),(0.12,0.50)],
-            True, (220,130,0), 'medium', 'shape', (220,130,0)
+            True, (220,130,0), 'medium', 'shape', (255,100,0)
         ),
         'pentagon': (
             [(0.5+0.38*math.cos(math.radians(a-90)), 0.5+0.38*math.sin(math.radians(a-90)))
              for a in range(0,360,72)],
-            True, (180,80,255), 'medium', 'shape', (180,80,255)
+            True, (180,80,255), 'medium', 'shape', (130,0,100)
         ),
         'hexagon': (
             [(0.5+0.38*math.cos(math.radians(a)), 0.5+0.38*math.sin(math.radians(a)))
              for a in range(0,360,60)],
-            True, (80,200,80), 'medium', 'shape', (80,200,80)
+            True, (80,200,80), 'medium', 'shape', (0,180,0)
         ),
         'octagon': (
             [(0.5+0.38*math.cos(math.radians(a)), 0.5+0.38*math.sin(math.radians(a)))
              for a in range(0,360,45)],
-            True, (0,165,255), 'hard', 'shape', (0,165,255)
+            True, (0,165,255), 'hard', 'shape', (0,140,255)
         ),
         'oval': (
             [(0.5+0.40*math.cos(math.radians(a)), 0.5+0.25*math.sin(math.radians(a)))
              for a in range(0,360,20)],
-            True, (255,50,200), 'hard', 'shape', (255,50,200)
+            True, (255,50,200), 'hard', 'shape', (255,100,0)
         ),
         'arrow': (
-            _arrow_dots(), True, (0,200,255), 'hard', 'shape', (0,200,255)
+            _arrow_dots(), True, (0,200,255), 'hard', 'shape', (0,230,255)
         ),
         'crescent': (
-            _crescent_dots(), False, (200,100,255), 'hard', 'shape', (200,100,255)
+            _crescent_dots(), False, (200,100,255), 'hard', 'shape', (130,0,100)
         ),
 
                                                                 
@@ -199,7 +199,7 @@ def get_item_data(name):
             ORANGE_POINTS, True, (0,140,255), 'easy', 'fruit', (0,140,255)
         ),
         'mango': (
-            MANGO_POINTS, True, (0,200,255), 'medium', 'fruit', (0,200,255)
+            MANGO_POINTS, True, (0,200,255), 'medium', 'fruit', (0,230,255)
         ),
         'apple': (
             APPLE_POINTS, True, (0,0,220), 'medium', 'fruit', (0,0,220)
@@ -208,7 +208,7 @@ def get_item_data(name):
             BANANA_POINTS, True, (0,230,255), 'medium', 'fruit', (0,230,255)
         ),
         'pear': (
-            PEAR_POINTS, True, (30,180,30), 'hard', 'fruit', (30,180,30)
+            PEAR_POINTS, True, (30,180,30), 'hard', 'fruit', (0,180,0)
         ),
 
                                                                 
@@ -216,19 +216,19 @@ def get_item_data(name):
             CARROT_POINTS, True, (0,140,255), 'easy', 'vegetable', (0,140,255)
         ),
         'potato': (
-            POTATO_POINTS, True, (60,130,180), 'easy', 'vegetable', (60,130,180)
+            POTATO_POINTS, True, (60,130,180), 'easy', 'vegetable', (60,20,180)
         ),
         'tomato': (
-            TOMATO_POINTS, True, (0,0,210), 'medium', 'vegetable', (0,0,210)
+            TOMATO_POINTS, True, (0,0,210), 'medium', 'vegetable', (0,0,220)
         ),
         'eggplant': (
             EGGPLANT_POINTS, True, (130,0,100), 'medium', 'vegetable', (130,0,100)
         ),
         'mushroom': (
-            MUSHROOM_POINTS, True, (60,80,160), 'medium', 'vegetable', (60,80,160)
+            MUSHROOM_POINTS, True, (60,80,160), 'medium', 'vegetable', (60,20,180)
         ),
         'pumpkin': (
-            PUMPKIN_POINTS, True, (0,100,220), 'hard', 'vegetable', (0,100,220)
+            PUMPKIN_POINTS, True, (0,100,220), 'hard', 'vegetable', (0,140,255)
         ),
     }
     return items.get(name, items['circle'])
@@ -428,22 +428,28 @@ def build_guide_image(W, H, dot_px, closed, guide_color):
     return guide
 
 def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
-\
-\
-\
-       
-    start_t     = time.time()
-    selected    = None
-    hover_idx   = -1
+    start_t  = time.time()
 
-                                           
     gh, gw = H//4, W//4
-    guide_full = build_guide_image(W, H, dot_px, closed, guide_color)
+    guide_full  = build_guide_image(W, H, dot_px, closed, guide_color)
     guide_thumb = cv2.resize(guide_full, (gw, gh))
 
-    pal_x  = 40
-    pal_y0 = H//2 - len(PALETTE)*30
-    swatch = 50
+    # Layout: 2 rows of 5 swatches centered
+    swatch = 60
+    gap    = 14
+    cols   = 5
+    total_w = cols * (swatch + gap) - gap
+    pal_x0  = (W - total_w) // 2
+    pal_y0  = H // 2 - 70
+
+    # MediaPipe setup
+    base_opts = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
+    opts = mp_vision.HandLandmarkerOptions(base_options=base_opts, num_hands=1,
+        min_hand_detection_confidence=0.55, min_hand_presence_confidence=0.55)
+    detector = mp_vision.HandLandmarker.create_from_options(opts)
+
+    hover_idx    = -1   # swatch index currently hovered
+    hover_frames = 0    # consecutive frames hovering that swatch
 
     while True:
         ret, frame = cap.read()
@@ -451,67 +457,88 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
         frame = cv2.flip(frame, 1)
 
         panel = frame.copy()
-        cv2.rectangle(panel,(0,0),(W,H),(0,0,0),-1)
+        cv2.rectangle(panel, (0,0), (W,H), (0,0,0), -1)
         display = cv2.addWeighted(frame, 0.25, panel, 0.75, 0)
 
-               
-        cv2.putText(display,"Pick a Color!",(W//2-180,60),
-                    cv2.FONT_HERSHEY_DUPLEX,1.5,(0,0,0),6)
-        cv2.putText(display,"Pick a Color!",(W//2-180,60),
-                    cv2.FONT_HERSHEY_DUPLEX,1.5,(255,160,0),3)
+        # Title
+        cv2.putText(display, "Point your finger at a color!", (W//2-260, 55),
+                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (0,0,0), 6)
+        cv2.putText(display, "Point your finger at a color!", (W//2-260, 55),
+                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (255,160,0), 3)
 
-                               
-        gx = W - gw - 20
-        gy = 80
+        # Guide thumbnail
+        gx, gy = W - gw - 20, 80
         display[gy:gy+gh, gx:gx+gw] = guide_thumb
-        cv2.rectangle(display,(gx-2,gy-2),(gx+gw+2,gy+gh+2),(255,255,255),2)
-        cv2.putText(display,"Color Guide",(gx+gw//2-55,gy-10),
-                    cv2.FONT_HERSHEY_SIMPLEX,0.6,(200,200,200),1)
+        cv2.rectangle(display, (gx-2,gy-2), (gx+gw+2,gy+gh+2), (255,255,255), 2)
+        cv2.putText(display, "Color Guide", (gx+gw//2-55, gy-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200,200,200), 1)
 
-                          
-        for i,(bgr,name) in enumerate(PALETTE):
-            py = pal_y0 + i*(swatch+8)
-            border = (255,255,255) if i==hover_idx else (100,100,100)
-            thick  = 3             if i==hover_idx else 1
-            cv2.rectangle(display,(pal_x,py),(pal_x+swatch,py+swatch),bgr,-1)
-            cv2.rectangle(display,(pal_x,py),(pal_x+swatch,py+swatch),border,thick)
-            cv2.putText(display, name,(pal_x+swatch+12,py+34),
-                        cv2.FONT_HERSHEY_SIMPLEX,0.65,(220,220,220),1)
+        # Detect finger
+        fx, fy = -1, -1
+        rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = detector.detect(mp_img)
+        if result.hand_landmarks:
+            lm = result.hand_landmarks[0]
+            fx = int(lm[8].x * W)
+            fy = int(lm[8].y * H)
+            cv2.circle(display, (fx, fy), 14, (0,255,255), -1)
+            cv2.circle(display, (fx, fy), 14, (255,255,255), 2)
 
-                     
-        cv2.putText(display,"Press number key (1-0) to select color",(W//2-300,H-40),
-                    cv2.FONT_HERSHEY_SIMPLEX,0.7,(180,180,180),1)
-        cv2.putText(display,"Then press ENTER to confirm",(W//2-220,H-15),
-                    cv2.FONT_HERSHEY_SIMPLEX,0.65,(180,180,180),1)
+        # Find which swatch (if any) finger is over this frame
+        this_hover = -1
+        if fx != -1:
+            for i, (bgr, name) in enumerate(PALETTE):
+                col = i % cols
+                row = i // cols
+                cx_s = pal_x0 + col * (swatch + gap) + swatch // 2
+                cy_s = pal_y0 + row * (swatch + gap) + swatch // 2
+                if abs(fx - cx_s) < swatch//2 + 8 and abs(fy - cy_s) < swatch//2 + 8:
+                    this_hover = i
+                    break
 
-                          
-        if selected is not None:
-            cv2.putText(display,f"Selected: {PALETTE[selected][1]}",(W//2-160,H//2+20),
-                        cv2.FONT_HERSHEY_SIMPLEX,1.0,(0,0,0),5)
-            cv2.putText(display,f"Selected: {PALETTE[selected][1]}",(W//2-160,H//2+20),
-                        cv2.FONT_HERSHEY_SIMPLEX,1.0,PALETTE[selected][0],2)
-            cv2.rectangle(display,(W//2-40,H//2+40),(W//2+40,H//2+90),PALETTE[selected][0],-1)
-            cv2.rectangle(display,(W//2-40,H//2+40),(W//2+40,H//2+90),(255,255,255),2)
+        if this_hover == hover_idx and this_hover != -1:
+            hover_frames += 1
+        else:
+            hover_idx    = this_hover
+            hover_frames = 1 if this_hover != -1 else 0
 
+        if hover_frames >= 8:
+            detector.close()
+            return PALETTE[hover_idx][0], time.time() - start_t
+
+        # Draw swatches
+        for i, (bgr, name) in enumerate(PALETTE):
+            col = i % cols
+            row = i // cols
+            px  = pal_x0 + col * (swatch + gap)
+            py  = pal_y0 + row * (swatch + gap)
+            cx_s = px + swatch // 2
+            cy_s = py + swatch // 2
+
+            cv2.rectangle(display, (px, py), (px+swatch, py+swatch), bgr, -1)
+            border_col = (0,255,255) if i == hover_idx else (100,100,100)
+            border_w   = 3          if i == hover_idx else 1
+            cv2.rectangle(display, (px, py), (px+swatch, py+swatch), border_col, border_w)
+            # Progress arc while hovering
+            if i == hover_idx and hover_frames > 0:
+                angle = int(360 * hover_frames / 8)
+                cv2.ellipse(display, (cx_s, cy_s), (swatch//2+6, swatch//2+6),
+                            -90, 0, angle, (255,255,255), 3)
+            # Color name with dark background
+            tx, ty = px, py + swatch + 18
+            (tw, th), _ = cv2.getTextSize(name, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            cv2.rectangle(display, (tx-2, ty-th-2), (tx+tw+2, ty+4), (0,0,0), -1)
+            cv2.putText(display, name, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+
+        cv2.putText(display, "ESC to quit", (20, H-20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (150,150,150), 1)
         cv2.imshow("DrawBook", display)
+        if cv2.waitKey(1) & 0xFF == 27:
+            detector.close()
+            return None, 0
 
-        key = cv2.waitKey(30) & 0xFF
-        if key == 27: return None, 0
-                                                        
-        elif ord('1') <= key <= ord('9'):
-            idx = key - ord('1')
-            if idx < len(PALETTE):
-                selected  = idx
-                hover_idx = idx
-        elif key == ord('0'):
-            selected  = 9
-            hover_idx = 9
-        elif key == 13 and selected is not None:
-            return PALETTE[selected][0], time.time() - start_t
 
-                                                                
-              
-                                                                
 def write_completion_signal(item_name, category, pts_earned,
                              time_trace, time_name, time_color):
     try:
@@ -527,7 +554,7 @@ def write_completion_signal(item_name, category, pts_earned,
                 "color": round(time_color, 2),
             }
         }
-        with open("drawbook_signal.json","w") as f:
+        with open("tracely_signal.json","w") as f:
             json.dump(signal, f)
         print(f"✅ Signal written: {signal}")
     except Exception as e:
@@ -578,7 +605,8 @@ def main():
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"Resolution: {W}x{H}")
 
-    dot_px = [(int(d[0]*W), int(d[1]*H)) for d in dots_rel]
+    pad_x, pad_y = 0.12, 0.10
+    dot_px = [(int(pad_x*W + d[0]*(W*(1-2*pad_x))), int(pad_y*H + d[1]*(H*(1-pad_y-0.20)))) for d in dots_rel]
     SNAP_R = max(35, int(W * 0.06))
 
     WIN = "DrawBook"
@@ -749,8 +777,13 @@ def main():
                 item_name, W, H, cap, dot_px, closed, guide_color)
             if chosen_color is None: break
             time_color  = t_col
-            pts_so_far += 10
-            print(f"✅ Colored! +10 pts | Time: {time_color:.1f}s")
+            pal_bgrs = [bgr for bgr, _ in PALETTE]
+            suggested_in_palette = any(tuple(bgr) == tuple(guide_color) for bgr in pal_bgrs)
+            if not suggested_in_palette or tuple(chosen_color) == tuple(guide_color):
+                pts_so_far += 10
+                print(f"✅ Correct color! +10 pts | Time: {time_color:.1f}s")
+            else:
+                print(f"🎨 Color chosen but doesn't match suggested | Time: {time_color:.1f}s")
 
                                           
             seed_x = int(np.mean([d[0] for d in dot_px]))

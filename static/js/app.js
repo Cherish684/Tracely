@@ -1,6 +1,6 @@
 'use strict';
 
-const FLASK_URL = 'http://127.0.0.1:5050';   
+const FLASK_URL = window.location.origin;
 
 const ITEMS = [
 
@@ -445,11 +445,9 @@ function launchItem() {
   } else {
     fetch(FLASK_URL+`/launch?item=${item.id}`, {credentials:'include'})
       .then(r=>r.json())
-      .then(d=>{
-        if(d.launched){ showToast(`🎮 Launching ${item.name}!`); pollSignal(); }
-        else { showToast('⚠️ Server offline — using browser mode'); startMobileDrawing(item); }
-      })
-      .catch(()=>{ startMobileDrawing(item); });
+      .then(d=>{ if(d.launched){showToast(`🎮 Launching ${item.name}!`);pollSignal();}
+                 else showToast(`❌ ${d.error||'Launch failed'}`); })
+      .catch(()=>showToast('⚠️ Server offline! Run python app.py first.'));
   }
 }
 
@@ -469,7 +467,7 @@ function applySignal(d) {
   STATE.progress[id].trace = true;
   STATE.progress[id].name  = true;
   STATE.progress[id].color = true;
-  STATE.points[id] = 30;
+  STATE.points[id] = d.points || 30;
   STATE.times[id]  = d.times||{trace:0,name:0,color:0};
   persistState();
   updateHeaderScore();
@@ -498,6 +496,8 @@ let mobileEraserMode  = false;
 let mobileEraserStrokes = [];
 let mobileAnimating   = false;
 let mobileAnimProgress = 0;
+let colorHoverHex     = null;
+let colorHoverFrames  = 0;
 
 const SHAPE_GUIDES = {
 
@@ -614,30 +614,31 @@ async function startMobileDrawing(item) {
   mobileStepStart   = performance.now();
   mobilePtsEarned   = 0;
   mobileNameCorrect = false;
-  mobileSelectedColor = item.color;
+  mobileSelectedColor = null;
   mobileCurrentDot  = 0;
   mobileGuideDotIndices = [];
   mobileEraserMode  = false;
   mobileEraserStrokes = [];
   mobileAnimating   = false;
   mobileAnimProgress = 0;
+  colorHoverHex     = null;
+  colorHoverFrames  = 0;
 
   const modal = document.getElementById('mobile-draw-modal');
   modal.style.display = 'flex';
   document.getElementById('mhud-item-name').textContent = item.name;
   updateMobileHUD();
 
-  const existingDoneBtn = document.getElementById('done-tracing-camera-btn');
-  if (!existingDoneBtn) {
-    const db = document.createElement('button');
-    db.id = 'done-tracing-camera-btn';
-    db.className = 'voice-name-btn';
-    db.style.cssText = 'position:absolute;bottom:70px;left:50%;transform:translateX(-50%);z-index:10;display:none;';
-    db.textContent = '✅ Done Tracing!';
-    db.onclick = finishTrace;
-    document.getElementById('mobile-canvas-wrap').appendChild(db);
+  let dtBtn = document.getElementById('done-tracing-camera-btn');
+  if (!dtBtn) {
+    dtBtn = document.createElement('button');
+    dtBtn.id = 'done-tracing-camera-btn';
+    dtBtn.className = 'voice-name-btn';
+    dtBtn.style.cssText = 'position:absolute;bottom:70px;left:50%;transform:translateX(-50%);z-index:20;display:none;';
+    dtBtn.textContent = '✅ Done Tracing!';
+    dtBtn.onclick = finishTrace;
+    document.getElementById('mobile-canvas-wrap').appendChild(dtBtn);
   }
-
   showMobileStep(1);
 
   try {
@@ -703,7 +704,7 @@ function hideMobileLoading() {
 
 let lastGestureTime = 0;
 function onHandResults(results) {
-  if (mobileStep!==1) return;
+  if (mobileStep!==1 && mobileStep!==3) return;
   const canvas = document.getElementById('mobile-canvas');
   const ctx    = canvas.getContext('2d');
   const video  = document.getElementById('mobile-video');
@@ -715,10 +716,15 @@ function onHandResults(results) {
   ctx.drawImage(video,0,0,canvas.width,canvas.height);
   ctx.restore();
 
-  drawGuideOnCanvas(ctx, canvas.width, canvas.height);
+  if (mobileStep===1) drawGuideOnCanvas(ctx, canvas.width, canvas.height);
 
   if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
     document.getElementById('gesture-label').textContent = '✋ Show your hand';
+    // In step 3 (color), keep drawing the swatches even without a hand so the
+    // UI doesn't blank out and appear to revert to a previous step.
+    if (mobileStep === 3) {
+      drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, -999, -999);
+    }
     return;
   }
 
@@ -737,29 +743,29 @@ function onHandResults(results) {
   } else if (gesture==='FIST') {
     mobileDrawing = false;
   } else if (gesture==='THUMBS_UP') {
-    const now = Date.now();
-    if (now-lastGestureTime>2000) {
-      lastGestureTime = now;
-      finishTrace();
-    }
-  } else if (gesture==='PEACE') {
-    const now = Date.now();
-    if (now-lastGestureTime>1500) {
-      lastGestureTime = now;
-      mobileCurrentDot = 0;
-      mobileAnimProgress = 0;
-      showToast('🔄 Reset — start from first dot!');
-    }
+    // advance only via Done Tracing button
   }
 
-  drawCompletedLines(ctx, canvas.width, canvas.height);
+  if (mobileStep===3) {
+    drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, tx, ty);
+  } else {
+    drawCompletedLines(ctx, canvas.width, canvas.height);
+  }
 
   ctx.beginPath();
   ctx.arc(tx,ty,12,0,Math.PI*2);
-  ctx.fillStyle   = gesture==='DRAWING'?'rgba(255,255,0,0.8)':'rgba(255,255,255,0.5)';
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth   = 2;
-  ctx.fill(); ctx.stroke();
+  ctx.fillStyle=mobileStep===3?'rgba(0,255,255,0.9)':gesture==='DRAWING'?'rgba(255,255,0,0.8)':'rgba(255,255,255,0.5)';
+  ctx.strokeStyle='#fff';ctx.lineWidth=2;
+  ctx.fill();ctx.stroke();
+}
+
+function applyPadding(pts) {
+  const scale = 0.72;
+  const cx = 200, cy = 185;
+  return pts.map(p => ({
+    x: cx + (p.x - 200) * scale,
+    y: cy + (p.y - 200) * scale
+  }));
 }
 
 function getMobileGuideDots(item) {
@@ -790,7 +796,7 @@ function getMobileGuideDots(item) {
     pumpkin:   ()=>[ {x:216,y:105},{x:193,y:109},{x:183,y:131},{x:144,y:131},{x:111,y:142},{x:90,y:156},{x:75,y:178},{x:71,y:207},{x:84,y:235},{x:110,y:254},{x:151,y:266},{x:176,y:267},{x:203,y:271},{x:224,y:267},{x:246,y:267},{x:273,y:261},{x:304,y:246},{x:316,y:235},{x:325,y:219},{x:328,y:187},{x:312,y:159},{x:292,y:144},{x:270,y:135},{x:240,y:130},{x:217,y:131},{x:213,y:120} ],
   };
   const fn = ITEM_DOTS[item.id];
-  return fn ? fn() : ITEM_DOTS.circle();
+  return applyPadding(fn ? fn() : ITEM_DOTS.circle());
 }
 
 function drawGuideOnCanvas(ctx, w, h) {
@@ -798,16 +804,8 @@ function drawGuideOnCanvas(ctx, w, h) {
   const scale = Math.min(w,h) / 400;
   const ox = (w - 400*scale)/2;
   const oy = (h - 400*scale)/2;
-  const pts = getGuidePoints(mobileItem);
   ctx.save();
   ctx.translate(ox,oy); ctx.scale(scale,scale);
-  ctx.beginPath();
-  ctx.setLineDash([8,8]);
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth   = 3/scale;
-  pts.forEach((p,i)=>{ if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-  ctx.stroke();
-  ctx.setLineDash([]);
 
   const dots = getMobileGuideDots(mobileItem);
   dots.forEach((d, i) => {
@@ -915,8 +913,7 @@ function animateToDot(dotIdx) {
       mobileAnimating    = false;
       const dots = getMobileGuideDots(mobileItem);
       if (mobileCurrentDot >= dots.length) {
-        showToast('🎉 All points traced! Tap Done!');
-        finishTrace();
+        showToast('🎉 All dots traced! Click Done Tracing to continue!');
       } else {
         showToast(`✅ ${mobileCurrentDot}/${dots.length} points`);
       }
@@ -1058,22 +1055,17 @@ function animateTouchGuide() {
 }
 
 function finishTrace() {
+  if (mobileDrawnPts.length < 5) {
+    showToast('Try drawing the shape first! ✏️');
+    return;
+  }
   mobileStepTimes.trace = (performance.now()-mobileStepStart)/1000;
   const score = scoreTrace();
-  if (score >= 30 || mobileDrawnPts.length>10) { 
-    mobilePtsEarned += 10;
-    document.getElementById('mhud-pts').textContent = `+${mobilePtsEarned}/30 pts`;
-    showToast(`✏️ Trace score: ${score}% — Great job!`);
-    mobileStep = 2;
-    showMobileStep(2);
-  } else if (mobileDrawnPts.length<5) {
-    showToast('Try drawing the shape first! ✏️');
-  } else {
-
-    mobilePtsEarned += 5;
-    mobileStep = 2;
-    showMobileStep(2);
-  }
+  mobilePtsEarned += 10;
+  document.getElementById('mhud-pts').textContent = `+${mobilePtsEarned}/30 pts`;
+  showToast(`✏️ Trace score: ${score}% — Moving to name step!`);
+  mobileStep = 2;
+  showMobileStep(2);
 }
 
 function showMobileStep(step) {
@@ -1081,30 +1073,38 @@ function showMobileStep(step) {
   updateMobileHUD();
   document.getElementById('mobile-palette').style.display   = 'none';
   document.getElementById('mobile-name-step').style.display = 'none';
-  document.getElementById('mobile-canvas-wrap').style.display='block';
+  document.getElementById('mobile-canvas-wrap').style.display='none';
   const dtBtn = document.getElementById('done-tracing-camera-btn');
-  if (dtBtn) dtBtn.style.display = (step === 1 && !mobileTouchFallback) ? 'block' : 'none';
+  if (dtBtn) dtBtn.style.display = 'none';
 
   const overlay = document.getElementById('step-overlay');
-  overlay.style.display='flex';
+  overlay.style.display='none';
 
   if (step===1) {
+    document.getElementById('mobile-canvas-wrap').style.display='block';
+    if (dtBtn && !mobileTouchFallback) dtBtn.style.display='block';
     overlay.innerHTML = `<div class="step-intro"><div class="step-num">Step 1 of 3</div>
       <div class="step-title">✏️ Trace the ${mobileItem.name}</div>
       <div class="step-tip">${isMobile()&&!mobileTouchFallback?'☝️ Raise index finger to draw<br>👍 Thumbs up to finish':'👆 Draw with your finger then tap Done'}</div>
       <button class="step-dismiss-btn" onclick="document.getElementById('step-overlay').style.display='none'">Let's go! →</button>
     </div>`;
+    overlay.style.display='flex';
   } else if (step===2) {
-    stopCameraLoop();
     overlay.style.display='none';
     document.getElementById('mobile-canvas-wrap').style.display='none';
     document.getElementById('mobile-name-step').style.display='flex';
     document.getElementById('name-result').textContent='';
   } else if (step===3) {
     overlay.style.display='none';
-    document.getElementById('mobile-canvas-wrap').style.display='none';
-    document.getElementById('mobile-palette').style.display='block';
-    buildPalette();
+    if (mobileTouchFallback) {
+      document.getElementById('mobile-canvas-wrap').style.display='none';
+      document.getElementById('mobile-palette').style.display='block';
+      buildPalette();
+    } else {
+      document.getElementById('mobile-canvas-wrap').style.display='block';
+      document.getElementById('mobile-palette').style.display='none';
+      buildPaletteOverlay();
+    }
   }
 }
 
@@ -1118,18 +1118,22 @@ function stopCameraLoop() {
   if (mobileHands) { mobileHands.close(); mobileHands=null; }
 }
 
+
 function listenForName() {
-  if (mobileNameCorrect) return;
   const SpeechRec = window.SpeechRecognition||window.webkitSpeechRecognition;
   if (!SpeechRec) { skipNameStep(); return; }
-  const btn = document.querySelector('.voice-name-btn');
+  const btn = document.querySelector('#mobile-name-step .voice-name-btn') || document.querySelector('.voice-name-btn');
   btn.textContent='🎤 Listening…'; btn.disabled=true;
   const r = new SpeechRec();
   r.lang='en-US'; r.maxAlternatives=5;
   r.onresult=e=>{
     const heard=Array.from(e.results[0]).map(x=>x.transcript.toLowerCase().trim());
     const target=mobileItem.name.toLowerCase();
-    const correct=heard.some(h=>h.includes(target)||target.includes(h));
+    const correct=heard.some(h=>{
+      if(h.includes(target)) return true;
+      const words=h.split(/\s+/);
+      return words.some(w=>w===target);
+    });
     const res=document.getElementById('name-result');
     if(correct){
       res.textContent='✅ Correct! Great job!';
@@ -1146,30 +1150,34 @@ function listenForName() {
   r.onend  =()=>{ btn.disabled=false; };
   r.start();
 }
-
-function checkTypedName() {
-  if (mobileNameCorrect) return;
-  const input = document.getElementById('name-type-input');
-  const res = document.getElementById('name-result');
-  if (!input || !mobileItem) return;
-  const typed = input.value.trim().toLowerCase();
-  const target = mobileItem.name.toLowerCase();
-  if (typed === target) {
-    res.textContent = '✅ Correct! Great job!';
-    res.style.color = '#4caf50';
-    mobilePtsEarned += 10;
-    mobileNameCorrect = true;
-    setTimeout(goToColorStep, 1200);
-  } else {
-    res.textContent = `❌ Not quite! The answer is not "${input.value.trim()}" — try again.`;
-    res.style.color = '#f44336';
-    input.value = '';
-  }
-}
 function skipNameStep() {
   mobilePtsEarned += 5;
   mobileNameCorrect = true;
   goToColorStep();
+}
+function checkTypedName() {
+  const nameStep = document.getElementById('mobile-name-step');
+  const input = (nameStep && nameStep.querySelector('input[type="text"],input:not([type])'))
+                || document.getElementById('typed-name-input')
+                || document.getElementById('name-type-input')
+                || document.getElementById('name-input');
+  const res   = document.getElementById('name-result');
+  if (!input || !mobileItem) return;
+  const typed  = input.value.toLowerCase().trim();
+  const target = mobileItem.name.toLowerCase();
+  if (!typed) { showToast('Type the name first! ✏️'); return; }
+  const correct = typed === target || typed.includes(target) || target.includes(typed);
+  if (correct) {
+    res.textContent = '✅ Correct! Great job!';
+    res.style.color = '#4caf50';
+    mobilePtsEarned += 10; mobileNameCorrect = true;
+    setTimeout(goToColorStep, 1200);
+  } else {
+    res.textContent = `🤔 You typed "${input.value.trim()}" — try "${mobileItem.name}"`;
+    res.style.color = '#ff9800';
+    input.value = '';
+    input.focus();
+  }
 }
 function goToColorStep() {
   mobileStepTimes.name = (performance.now()-mobileStepStart)/1000;
@@ -1177,14 +1185,151 @@ function goToColorStep() {
   showMobileStep(3);
 }
 
+function getClosestColorHex(hex) {
+  if(!hex)return null;
+  const toRGB=h=>({r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)});
+  const dist=(a,b)=>Math.sqrt((a.r-b.r)**2+(a.g-b.g)**2+(a.b-b.b)**2);
+  const target=toRGB(hex);
+  let best=COLORS[0],bestDist=Infinity;
+  COLORS.forEach(c=>{const d=dist(target,toRGB(c.hex));if(d<bestDist){bestDist=d;best=c;}});
+  return best.hex;
+}
+function getClosestColorName(hex) {
+  if(!hex)return'';
+  const toRGB=h=>({r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)});
+  const dist=(a,b)=>Math.sqrt((a.r-b.r)**2+(a.g-b.g)**2+(a.b-b.b)**2);
+  const target=toRGB(hex);
+  let best=COLORS[0],bestDist=Infinity;
+  COLORS.forEach(c=>{const d=dist(target,toRGB(c.hex));if(d<bestDist){bestDist=d;best=c;}});
+  return best.name;
+}
+
+function buildPaletteOverlay() {
+  const existing=document.getElementById('done-coloring-overlay-btn');
+  if(!existing){
+    const done=document.createElement('button');
+    done.id='done-coloring-overlay-btn';
+    done.className='voice-name-btn';
+    done.style.cssText='position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:20;';
+    done.textContent='✅ Done Coloring!';
+    done.onclick=finishColor;
+    document.getElementById('mobile-canvas-wrap').appendChild(done);
+  } else { existing.style.display='block'; }
+}
+
+function drawColorSwatchesOnCanvas(ctx, cw, ch, tx, ty) {
+  const cols=5, swatch=50, gap=10;
+  const totalW=cols*(swatch+gap)-gap;
+  const startX=(cw-totalW)/2;
+  const rows=Math.ceil(COLORS.length/cols);
+  const swatchAreaH=rows*(swatch+gap+18)+10;
+  const startY=ch-swatchAreaH-20;
+
+  // Draw filled shape in top area
+  if (mobileItem) {
+    const fillColor = mobileSelectedColor || 'transparent';
+    const pts=getMobileGuideDots(mobileItem);
+    if(pts&&pts.length){
+      const pad=30;
+      const previewH=startY-pad;
+      const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+      const minX=Math.min(...xs),maxX=Math.max(...xs);
+      const minY=Math.min(...ys),maxY=Math.max(...ys);
+      const rangeX=maxX-minX||1,rangeY=maxY-minY||1;
+      const scale=Math.min((cw-pad*2)/rangeX,(previewH-pad)/rangeY);
+      const ox=(cw-(rangeX*scale))/2-minX*scale;
+      const oy=(previewH-(rangeY*scale))/2-minY*scale+pad/2;
+      ctx.beginPath();
+      pts.forEach((p,i)=>{const px=p.x*scale+ox,py=p.y*scale+oy;if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);});
+      ctx.closePath();
+      ctx.fillStyle=fillColor;ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.9)';ctx.lineWidth=2.5;ctx.stroke();
+    }
+  }
+
+  // Find suggested palette color using closest-color match
+  const suggestedHex = mobileItem ? getClosestColorHex(mobileItem.color) : null;
+
+  // Draw swatches
+  COLORS.forEach((c,i)=>{
+    const col=i%cols,row=Math.floor(i/cols);
+    const cx=startX+col*(swatch+gap)+swatch/2;
+    const cy=startY+row*(swatch+gap+18)+swatch/2;
+    const hovered=Math.hypot(tx-cx,ty-cy)<swatch/2+10;
+    if(hovered){
+      if(colorHoverHex===c.hex){
+        colorHoverFrames++;
+      } else {
+        colorHoverHex=c.hex;
+        colorHoverFrames=1;
+      }
+      if(colorHoverFrames>=8 && mobileSelectedColor!==c.hex){
+        mobileSelectedColor=c.hex;
+        showToast(`🎨 ${c.name} selected!`);
+      }
+    }
+    const isSuggested = suggestedHex && c.hex.toLowerCase()===suggestedHex.toLowerCase();
+    const isSelected  = mobileSelectedColor===c.hex;
+    // Draw outer suggested ring first (behind swatch)
+    if(isSuggested){
+      ctx.beginPath();ctx.arc(cx,cy,swatch/2+7,0,Math.PI*2);
+      ctx.strokeStyle='#ffd93d';ctx.lineWidth=3;ctx.setLineDash([5,3]);ctx.stroke();ctx.setLineDash([]);
+    }
+    ctx.beginPath();ctx.arc(cx,cy,swatch/2,0,Math.PI*2);
+    ctx.fillStyle=c.hex;ctx.fill();
+    ctx.strokeStyle=isSelected?'#fff':(hovered?'#ff0':'rgba(255,255,255,0.3)');
+    ctx.lineWidth=isSelected?3:1.5;ctx.stroke();
+    // Label background + text
+    ctx.fillStyle='rgba(0,0,0,0.75)';
+    ctx.fillRect(cx-swatch/2,cy+swatch/2+2,swatch,16);
+    ctx.fillStyle=isSuggested?'#ffd93d':'#fff';
+    ctx.font=`${isSuggested?'bold ':''} 9px sans-serif`;ctx.textAlign='center';
+    ctx.fillText(isSuggested?'⭐'+c.name:c.name,cx,cy+swatch/2+13);
+  });
+}
+
+function drawShapeOnCanvas(ctx,size,fillHex) {
+  if(!mobileItem)return;
+  const pts=getGuidePoints(mobileItem);
+  if(!pts||!pts.length)return;
+  const pad=14;
+  const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+  const minX=Math.min(...xs),maxX=Math.max(...xs);
+  const minY=Math.min(...ys),maxY=Math.max(...ys);
+  const rangeX=maxX-minX||1,rangeY=maxY-minY||1;
+  const scale=Math.min((size-pad*2)/rangeX,(size-pad*2)/rangeY);
+  const ox=(size-(rangeX*scale))/2-minX*scale;
+  const oy=(size-(rangeY*scale))/2-minY*scale;
+  ctx.beginPath();
+  pts.forEach((p,i)=>{const px=p.x*scale+ox,py=p.y*scale+oy;if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);});
+  ctx.closePath();ctx.fillStyle=fillHex||'transparent';ctx.fill();
+  ctx.strokeStyle='#000';ctx.lineWidth=2.5;ctx.stroke();
+}
+
+function drawColorPreview(hex) {
+  const canvas=document.getElementById('color-preview-canvas');
+  if(!canvas)return;
+  const size=180;canvas.width=size;canvas.height=size;
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,size,size);
+  drawShapeOnCanvas(ctx,size,hex);
+}
+
+function drawBlackOutline() {
+  const canvas=document.getElementById('color-preview-canvas');
+  if(!canvas)return;
+  const size=180;canvas.width=size;canvas.height=size;
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,size,size);
+  drawShapeOnCanvas(ctx,size,'transparent');
+}
+
 function buildPalette() {
-  // Show suggested color
-  if (mobileItem && mobileItem.color) {
-    const swatch = document.getElementById('suggested-swatch');
-    const label = document.getElementById('suggested-color-name');
-    const matchedColor = COLORS.find(c => c.hex.toLowerCase() === mobileItem.color.toLowerCase());
-    if (swatch) swatch.style.background = mobileItem.color;
-    if (label) label.textContent = matchedColor ? matchedColor.name : mobileItem.color;
+  if(mobileItem&&mobileItem.color){
+    const sw=document.getElementById('suggested-swatch');
+    const lb=document.getElementById('suggested-color-name');
+    if(sw)sw.style.background=mobileItem.color;
+    if(lb)lb.textContent=getClosestColorName(mobileItem.color);
   }
   const wrap = document.getElementById('palette-swatches');
   wrap.innerHTML='';
@@ -1202,48 +1347,27 @@ function buildPalette() {
   done.textContent='✅ Done Coloring!';
   done.onclick=finishColor;
   document.getElementById('mobile-palette').appendChild(done);
+  setTimeout(drawBlackOutline, 50);
 }
 function selectColor(hex, el) {
   mobileSelectedColor=hex;
   document.querySelectorAll('.palette-swatch').forEach(s=>s.classList.remove('selected'));
   el.classList.add('selected');
   showToast(`🎨 ${COLORS.find(c=>c.hex===hex)?.name||'Color'} selected!`);
-  drawColorPreview(hex);
-}
-
-function drawColorPreview(hex) {
-  const canvas = document.getElementById('color-preview-canvas');
-  if (!canvas || !mobileItem) return;
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width = 200;
-  const h = canvas.height = 200;
-  ctx.clearRect(0, 0, w, h);
-  const pts = getGuidePoints(mobileItem);
-  if (!pts || !pts.length) return;
-  const xs = pts.map(p=>p.x), ys = pts.map(p=>p.y);
-  const minX=Math.min(...xs), maxX=Math.max(...xs);
-  const minY=Math.min(...ys), maxY=Math.max(...ys);
-  const scaleX = (w-20)/(maxX-minX||1);
-  const scaleY = (h-20)/(maxY-minY||1);
-  const scale = Math.min(scaleX, scaleY);
-  const ox = (w - (maxX-minX)*scale)/2 - minX*scale;
-  const oy = (h - (maxY-minY)*scale)/2 - minY*scale;
-  ctx.beginPath();
-  pts.forEach((p,i)=>{
-    const px = p.x*scale+ox, py = p.y*scale+oy;
-    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
-  });
-  ctx.closePath();
-  ctx.fillStyle = hex;
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
 }
 function finishColor() {
   if (!mobileSelectedColor) { showToast('Pick a color first! 🎨'); return; }
   mobileStepTimes.color=(performance.now()-mobileStepStart)/1000;
-  mobilePtsEarned=30;
+  const suggested = mobileItem && mobileItem.color ? mobileItem.color.toLowerCase() : '';
+  const picked = mobileSelectedColor.toLowerCase();
+  const suggestedInPalette = COLORS.some(c => c.hex.toLowerCase() === suggested);
+  if (picked === suggested || !suggestedInPalette) {
+    mobilePtsEarned = Math.min(mobilePtsEarned + 10, 30);
+    showToast('🎉 Perfect color match! +10 pts');
+  } else {
+    showToast('🎨 Color chosen! Match suggested color for full points.');
+  }
+  updateMobileHUD();
   completeMobileItem();
 }
 
@@ -1253,29 +1377,28 @@ async function completeMobileItem() {
   STATE.progress[id].trace = true;
   STATE.progress[id].name  = true;
   STATE.progress[id].color = true;
-  STATE.points[id]         = 30;
+  STATE.points[id]         = mobilePtsEarned;
   STATE.times[id]          = {trace:mobileStepTimes.trace,name:mobileStepTimes.name,color:mobileStepTimes.color};
 
-  if (window.location.port === '5050') {
-    try {
-      await fetch(FLASK_URL+'/api/complete',{
-        method:'POST', credentials:'include',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          item:id,
-          time_trace:mobileStepTimes.trace,
-          time_name:mobileStepTimes.name,
-          time_color:mobileStepTimes.color
-        })
-      });
-    } catch(e){}
-  }
+  try {
+    await fetch(FLASK_URL+'/api/complete',{
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        item:id,
+        points:mobilePtsEarned,
+        time_trace:mobileStepTimes.trace,
+        time_name:mobileStepTimes.name,
+        time_color:mobileStepTimes.color
+      })
+    });
+  } catch(e){}
 
   await persistState();
   closeMobileDraw();
   updateHeaderScore();
   renderLearnPage();
-  showToast(`🎉 ${mobileItem.name} complete! +30 pts`);
+  showToast(`🎉 ${mobileItem.name} complete! +${mobilePtsEarned} pts`);
   triggerConfetti();
 }
 

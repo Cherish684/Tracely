@@ -9,7 +9,8 @@ Desktop uses Python + OpenCV + MediaPipe. Mobile uses MediaPipe JavaScript via c
 
 ```
 tracely/
-├── app.py                  ← Flask server
+├── app.py  
+    instructions.txt                ← Flask server
 ├── shape_draw.py           ← Desktop drawing game
 ├── hand_landmarker.task    ← Copy here from original project
 ├── requirements.txt

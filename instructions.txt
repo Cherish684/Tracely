@@ -1,0 +1,210 @@
+================================================================
+                        TRACELY
+         Learn to Draw, Trace & Color — Step by Step
+================================================================
+
+Welcome to Tracely! This guide explains how to set up and use
+the app, whether you're using it in your browser or with a
+webcam via the desktop CV mode.
+
+----------------------------------------------------------------
+CONTENTS
+----------------------------------------------------------------
+  1. What is Tracely?
+  2. Requirements
+  3. How to Run the App
+  4. Creating an Account / Logging In
+  5. Mode 1 — Browser Mode (Recommended for most users)
+  6. Mode 2 — CV + MediaPipe Desktop Mode (Webcam required)
+  7. Earning Points
+  8. Features Overview
+  9. Troubleshooting
+
+----------------------------------------------------------------
+1. WHAT IS TRACELY?
+----------------------------------------------------------------
+Tracely is an interactive learning app where you trace shapes,
+fruits, and vegetables step by step. Each item has 3 steps:
+
+  Step 1 — TRACE    : Follow the dot-to-dot guide
+  Step 2 — NAME IT  : Type or say the name of the item
+  Step 3 — COLOR IT : Pick the correct color
+
+Complete all 3 steps to earn up to 30 points per item!
+
+----------------------------------------------------------------
+2. REQUIREMENTS
+----------------------------------------------------------------
+To run Tracely locally you need:
+
+  - Python 3.8 or higher
+  - pip (Python package manager)
+  - A modern browser (Chrome recommended)
+
+Install dependencies by running:
+
+    pip install flask flask-cors mediapipe opencv-python numpy
+
+----------------------------------------------------------------
+3. HOW TO RUN THE APP
+----------------------------------------------------------------
+  1. Download or clone the project files
+  2. Open a terminal in the project folder
+  3. Run the Flask server:
+
+         python app.py
+
+  4. Open your browser and go to:
+
+         http://localhost:5050
+
+That's it! The app will open on the welcome/login page.
+
+----------------------------------------------------------------
+4. CREATING AN ACCOUNT / LOGGING IN
+----------------------------------------------------------------
+On the welcome page you have 3 options:
+
+  LOG IN      — Enter your existing username and password
+  SIGN UP     — Create a new account (takes 10 seconds)
+  PLAY AS GUEST — Jump straight in without an account
+                  (progress saved on this device only)
+
+NOTE: Signed-in accounts save progress to the server database
+so your progress is safe even if you switch devices or browsers.
+Guest progress is saved in the browser and may be lost if you
+clear browser data.
+
+----------------------------------------------------------------
+5. MODE 1 — BROWSER MODE (Recommended)
+----------------------------------------------------------------
+This mode works entirely in your browser using your device
+camera (phone, tablet, laptop) or touch screen.
+
+HOW TO USE:
+
+  - Click any item card on the Learn page to start
+  - Allow camera access when prompted
+  - Use hand gestures detected by your camera:
+
+      ONE FINGER POINTING  = Draw / trace
+      FIST                 = Stop drawing (lift pen)
+
+  Step 1 — TRACE:
+    Point your finger at each orange dot in order.
+    Connect all dots to complete the shape.
+    Click "Done Tracing" when finished.
+
+  Step 2 — NAME IT:
+    Type the name of the shape/fruit/vegetable.
+    Or use the microphone button to say the name.
+
+  Step 3 — COLOR IT:
+    Point your finger at a color swatch(the suggested color is depicted using golden circle).
+    Hold your finger still on the color for ~0.25 seconds
+    to confirm the selection (prevents accidental picks).
+    Click "Done Coloring" when happy with your color.
+
+NO CAMERA? A touch/click fallback is available automatically
+if camera access is denied or unavailable.
+
+----------------------------------------------------------------
+6. MODE 2 — CV + MEDIAPIPE DESKTOP MODE (Webcam required)
+----------------------------------------------------------------
+This mode runs as a separate Python script using OpenCV and
+MediaPipe for more accurate hand tracking via your webcam.
+It opens a full-screen window on your desktop.
+
+DIFFERENCE FROM BROWSER MODE:
+  - Higher accuracy hand tracking (runs locally in Python)
+  - Full-screen desktop window instead of browser
+  - Requires a physical webcam connected to your computer
+  - Does NOT work on phones/tablets or remote/cloud servers
+
+HOW TO LAUNCH:
+  Either click an item card in the browser app (it launches
+  automatically if the Flask server is running), or run it
+  manually from the terminal:
+
+      python shape_draw.py --item circle
+      python shape_draw.py --item apple
+      python shape_draw.py --item triangle
+
+  Replace the item name with any shape, fruit, or vegetable.
+
+CONTROLS IN CV MODE:
+
+      ONE FINGER UP        = Draw mode (trace the dots)
+      TWO FINGERS UP       = Erase mode
+      ENTER key            = Advance to next step
+      R key                = Restart current item
+      S key                = Save screenshot
+      Q or ESC             = Quit
+
+  Step 1 — TRACE:
+    Point your index finger at the orange dot.
+    Connect all dots in order. Press ENTER when done.
+
+  Step 2 — NAME IT:
+    A typing box appears. Type the item name and press ENTER.
+
+  Step 3 — COLOR IT:
+    Point your finger at a color swatch(selected color should be equal to selected color).
+    Hold still on the color for ~0.25 seconds to select it.
+    Selection confirms automatically.
+
+SUPPORTED ITEMS IN CV MODE:
+  Shapes    : circle, square, triangle, rectangle, star,
+              heart, diamond, pentagon, hexagon, octagon,
+              oval, arrow, crescent
+  Fruits    : orange, mango, apple, banana, pear
+  Vegetables: carrot, potato, tomato, eggplant, mushroom,
+              pumpkin
+
+----------------------------------------------------------------
+7. EARNING POINTS
+----------------------------------------------------------------
+Each item gives up to 30 points across 3 steps:
+
+  Tracing  — 10 pts (complete the dot-to-dot)
+  Naming   — 10 pts (type/say the correct name)
+  Coloring — 10 pts (pick the suggested color)
+             (if the suggested color is not in the palette,
+              any color you pick earns full points)
+
+Total points and progress are shown on the Learn page and
+in the Rewards section.
+
+----------------------------------------------------------------
+8. FEATURES OVERVIEW
+----------------------------------------------------------------
+  LEARN     — Browse and play all items by category
+  REWARDS   — View your points, badges, and achievements
+  REPORTS   — See your time and accuracy stats per item
+  SAVED     — Your favourited items (click ☆ on any card)
+  SETTINGS  — Change theme, manage account, send feedback
+
+----------------------------------------------------------------
+9. TROUBLESHOOTING
+----------------------------------------------------------------
+Camera not working?
+  → Make sure you allowed camera permission in the browser
+  → Try Chrome — it has the best camera/MediaPipe support
+  → If it still fails, the touch fallback will activate
+
+Progress not showing after login?
+  → Make sure you open the app on http://localhost:5050
+    (not http://127.0.0.1:5050) to avoid cookie issues
+
+CV mode window not opening?
+  → Make sure Flask server (app.py) is running first
+  → Check that mediapipe and opencv-python are installed
+  → Make sure your webcam is connected and not in use
+
+Server not found?
+  → Confirm app.py is running in the terminal
+  → Check you're visiting http://localhost:5050
+
+================================================================
+                   Thank you for using Tracely!
+================================================================
