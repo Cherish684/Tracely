@@ -374,3 +374,10 @@ if __name__ == '__main__':
     print("  Open: http://localhost:5050")
     print("=" * 55)
     app.run(host='0.0.0.0', port=5050, debug=False)
+@app.route('/robots.txt')
+def robots():
+    return send_from_directory('static', 'robots.txt')
+
+@app.route('/sitemap.xml')
+def sitemap():
+    return send_from_directory('static', 'sitemap.xml')

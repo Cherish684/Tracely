@@ -420,10 +420,9 @@ PALETTE = [
 ]
 
 def build_guide_image(W, H, dot_px, closed, guide_color):
-                                                          
+    # Outline only — no fill so figure starts empty
     guide = np.ones((H, W, 3), dtype=np.uint8) * 40
     pts   = np.array(dot_px, np.int32)
-    cv2.fillPoly(guide, [pts], guide_color)
     cv2.polylines(guide, [pts], closed, (255,255,255), 2, cv2.LINE_AA)
     return guide
 
@@ -431,8 +430,16 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
     start_t  = time.time()
 
     gh, gw = H//4, W//4
+    # Guide thumbnail: outline only (empty shape)
     guide_full  = build_guide_image(W, H, dot_px, closed, guide_color)
     guide_thumb = cv2.resize(guide_full, (gw, gh))
+
+    # Find the suggested color name from PALETTE by closest BGR distance
+    def bgr_dist(a, b):
+        return math.sqrt((int(a[0])-int(b[0]))**2 + (int(a[1])-int(b[1]))**2 + (int(a[2])-int(b[2]))**2)
+    suggested_idx  = min(range(len(PALETTE)), key=lambda i: bgr_dist(PALETTE[i][0], guide_color))
+    suggested_bgr  = PALETTE[suggested_idx][0]
+    suggested_name = PALETTE[suggested_idx][1]
 
     # Layout: 2 rows of 5 swatches centered
     swatch = 60
@@ -460,17 +467,38 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
         cv2.rectangle(panel, (0,0), (W,H), (0,0,0), -1)
         display = cv2.addWeighted(frame, 0.25, panel, 0.75, 0)
 
+        # Draw empty shape outline in center of screen
+        pts_arr = np.array(dot_px, np.int32)
+        cv2.polylines(display, [pts_arr], closed, (255,255,255), 2, cv2.LINE_AA)
+
         # Title
         cv2.putText(display, "Point your finger at a color!", (W//2-260, 55),
                     cv2.FONT_HERSHEY_DUPLEX, 1.3, (0,0,0), 6)
         cv2.putText(display, "Point your finger at a color!", (W//2-260, 55),
                     cv2.FONT_HERSHEY_DUPLEX, 1.3, (255,160,0), 3)
 
-        # Guide thumbnail
+        # --- Suggested color label (top-left, outside palette) ---
+        sug_box_x, sug_box_y = 20, 80
+        cv2.putText(display, "Suggested Color:", (sug_box_x, sug_box_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0,0,0), 4)
+        cv2.putText(display, "Suggested Color:", (sug_box_x, sug_box_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0,215,255), 2)
+        # Colored circle showing the suggested color
+        circle_cx = sug_box_x + 14
+        circle_cy = sug_box_y + 30
+        cv2.circle(display, (circle_cx, circle_cy), 18, suggested_bgr, -1)
+        cv2.circle(display, (circle_cx, circle_cy), 18, (255,255,255), 2)
+        # Suggested color name next to circle
+        cv2.putText(display, suggested_name, (sug_box_x + 38, circle_cy + 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0), 4)
+        cv2.putText(display, suggested_name, (sug_box_x + 38, circle_cy + 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,215,255), 2)
+
+        # Guide thumbnail (outline only)
         gx, gy = W - gw - 20, 80
         display[gy:gy+gh, gx:gx+gw] = guide_thumb
         cv2.rectangle(display, (gx-2,gy-2), (gx+gw+2,gy+gh+2), (255,255,255), 2)
-        cv2.putText(display, "Color Guide", (gx+gw//2-55, gy-10),
+        cv2.putText(display, "Shape Outline", (gx+gw//2-60, gy-10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200,200,200), 1)
 
         # Detect finger
@@ -504,10 +532,25 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
             hover_frames = 1 if this_hover != -1 else 0
 
         if hover_frames >= 8:
-            detector.close()
-            return PALETTE[hover_idx][0], time.time() - start_t
+            chosen_color = PALETTE[hover_idx][0]
 
-        # Draw swatches
+            # Fill the guide thumbnail with the chosen color (shape only)
+            filled_guide = guide_full.copy()
+            cv2.fillPoly(filled_guide, [np.array(dot_px, np.int32)], chosen_color)
+            cv2.polylines(filled_guide, [np.array(dot_px, np.int32)], closed, (255,255,255), 2, cv2.LINE_AA)
+            filled_thumb = cv2.resize(filled_guide, (gw, gh))
+
+            # Show the filled thumbnail in the guide panel for confirmation
+            gx, gy = W - gw - 20, 80
+            display[gy:gy+gh, gx:gx+gw] = filled_thumb
+            cv2.rectangle(display, (gx-2, gy-2), (gx+gw+2, gy+gh+2), chosen_color, 3)
+            cv2.imshow("DrawBook", display)
+            cv2.waitKey(400)  # brief pause so user sees the filled shape
+
+            detector.close()
+            return chosen_color, time.time() - start_t
+
+        # Draw swatches (no suggested ring on swatches)
         for i, (bgr, name) in enumerate(PALETTE):
             col = i % cols
             row = i // cols
@@ -786,15 +829,10 @@ def main():
                 print(f"🎨 Color chosen but doesn't match suggested | Time: {time_color:.1f}s")
 
                                           
-            seed_x = int(np.mean([d[0] for d in dot_px]))
-            seed_y = int(np.mean([d[1] for d in dot_px]))
-            seed_x = max(1,min(seed_x,W-2))
-            seed_y = max(1,min(seed_y,H-2))
-            fill_img  = draw_layer.copy()
-            fill_mask = np.zeros((H+2,W+2),np.uint8)
-            cv2.floodFill(fill_img,fill_mask,(seed_x,seed_y),chosen_color,
-                          loDiff=(30,30,30),upDiff=(30,30,30))
-            colour_layer = fill_img.copy()
+            shape_mask = np.zeros((H, W), dtype=np.uint8)
+            cv2.fillPoly(shape_mask, [np.array(dot_px, np.int32)], 255)
+            colour_layer = np.zeros((H, W, 3), dtype=np.uint8)
+            colour_layer[shape_mask == 255] = chosen_color
             shape_filled = True
 
                                      
