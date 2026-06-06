@@ -724,7 +724,7 @@ function onHandResults(results) {
     // In step 3 (color), keep drawing the swatches even without a hand so the
     // UI doesn't blank out and appear to revert to a previous step.
     if (mobileStep === 3) {
-      drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, -999, -999);
+      drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, -999, -999, null, canvas.width, canvas.height);
     }
     return;
   }
@@ -748,7 +748,7 @@ function onHandResults(results) {
   }
 
   if (mobileStep===3) {
-    drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, tx, ty);
+    drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, tx, ty, lm, canvas.width, canvas.height);
   } else {
     drawCompletedLines(ctx, canvas.width, canvas.height);
   }
@@ -1095,6 +1095,7 @@ function showMobileStep(step) {
     document.getElementById('mobile-canvas-wrap').style.display='none';
     document.getElementById('mobile-name-step').style.display='flex';
     document.getElementById('name-result').textContent='';
+    buildHoverKeyboard();
   } else if (step===3) {
     overlay.style.display='none';
     if (mobileTouchFallback) {
@@ -1119,6 +1120,218 @@ function stopCameraLoop() {
   if (mobileHands) { mobileHands.close(); mobileHands=null; }
 }
 
+
+// ── Step 2: hover keyboard ─────────────────────────────────────────────────
+let kbTyped       = '';
+let kbHoverKey    = null;
+let kbHoverFrames = 0;
+const KB_ROWS     = [
+  ['Q','W','E','R','T','Y','U','I','O','P'],
+  ['A','S','D','F','G','H','J','K','L'],
+  ['Z','X','C','V','B','N','M','<','OK']
+];
+const KB_NEEDED   = 18;
+
+function buildHoverKeyboard() {
+  kbTyped       = '';
+  kbHoverKey    = null;
+  kbHoverFrames = 0;
+
+  const ns = document.getElementById('mobile-name-step');
+  ns.innerHTML = '';
+  ns.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:flex-start;width:100%;height:100%;padding:10px 4px;box-sizing:border-box;background:rgba(0,0,0,0.85);';
+
+  // Title
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#0ef;font-size:1.1rem;font-weight:800;margin-bottom:6px;';
+  title.textContent   = '✋ Hover finger to spell the name!';
+  ns.appendChild(title);
+
+  // Typed text box
+  const box = document.createElement('div');
+  box.id = 'kb-typed-box';
+  box.style.cssText = 'background:#23273a;border:2px solid #fff;border-radius:10px;padding:8px 14px;font-size:1.3rem;font-weight:800;color:#fff;min-width:220px;text-align:center;margin-bottom:8px;letter-spacing:3px;';
+  box.textContent = '_';
+  ns.appendChild(box);
+
+  // Result feedback
+  const res = document.createElement('div');
+  res.id = 'name-result';
+  res.style.cssText = 'font-size:.85rem;font-weight:700;min-height:22px;margin-bottom:6px;';
+  ns.appendChild(res);
+
+  // Canvas keyboard
+  const canvas = document.createElement('canvas');
+  canvas.id = 'kb-canvas';
+  canvas.style.cssText = 'width:100%;max-width:420px;touch-action:none;border-radius:8px;';
+  ns.appendChild(canvas);
+
+  // Fallback touch buttons
+  const touchWrap = document.createElement('div');
+  touchWrap.id = 'kb-touch-wrap';
+  touchWrap.style.cssText = 'display:none;flex-direction:column;align-items:center;gap:4px;width:100%;max-width:420px;margin-top:4px;';
+  KB_ROWS.forEach(row => {
+    const rowDiv = document.createElement('div');
+    rowDiv.style.cssText = 'display:flex;gap:4px;justify-content:center;';
+    row.forEach(k => {
+      const btn = document.createElement('button');
+      btn.dataset.key = k;
+      btn.style.cssText = `padding:8px ${k==='OK'?'12px':'6px'};min-width:${k==='OK'?'44px':'32px'};border:1.5px solid #555;border-radius:7px;background:${k==='OK'?'#0a0':'#23273a'};color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;font-family:inherit;`;
+      btn.textContent = k === '<' ? '⌫' : k;
+      btn.onclick = () => handleKbKey(k);
+      rowDiv.appendChild(btn);
+    });
+    touchWrap.appendChild(rowDiv);
+  });
+  ns.appendChild(touchWrap);
+
+  // If touch fallback, show buttons instead of canvas
+  if (mobileTouchFallback) {
+    canvas.style.display = 'none';
+    touchWrap.style.display = 'flex';
+  } else {
+    drawKbCanvas(null, -999, -999);
+    // Camera hover loop
+    startKbCameraLoop();
+  }
+}
+
+let kbCameraActive = false;
+function startKbCameraLoop() {
+  kbCameraActive = true;
+  if (!mobileHands) return;
+  // reuse existing mediapipe — override onResults temporarily
+  mobileHands.onResults(onKbHandResults);
+}
+function stopKbCameraLoop() {
+  kbCameraActive = false;
+  if (mobileHands) mobileHands.onResults(onHandResults);
+}
+
+function onKbHandResults(results) {
+  if (mobileStep !== 2 || !kbCameraActive) return;
+  const canvas = document.getElementById('kb-canvas');
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width  = rect.width  || 360;
+  canvas.height = rect.height || 220;
+
+  let fx = -999, fy = -999;
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length) {
+    const lm = results.multiHandLandmarks[0];
+    // mirror x like onHandResults
+    const video = document.getElementById('mobile-video');
+    const vw = video.videoWidth  || 640;
+    const vh = video.videoHeight || 480;
+    const rawX = (1 - lm[8].x) * vw;
+    const rawY = lm[8].y       * vh;
+    // map from video coords to canvas coords
+    fx = (rawX / vw) * canvas.width;
+    fy = (rawY / vh) * canvas.height;
+  }
+  drawKbCanvas(null, fx, fy);
+}
+
+function drawKbCanvas(ctx, fx, fy) {
+  const canvas = document.getElementById('kb-canvas');
+  if (!canvas) return;
+  if (!ctx) ctx = canvas.getContext('2d');
+  const cw = canvas.width  || 360;
+  const ch = canvas.height || 220;
+
+  const KEY_W  = Math.floor(cw / 11);
+  const KEY_H  = Math.floor(ch / 4.5);
+  const GAP    = 3;
+
+  ctx.clearRect(0, 0, cw, ch);
+
+  let hitKey = null;
+  KB_ROWS.forEach((row, ri) => {
+    const rowW   = row.length * (KEY_W + GAP) - GAP;
+    const startX = (cw - rowW) / 2;
+    row.forEach((k, ci) => {
+      const x1 = startX + ci * (KEY_W + GAP);
+      const y1 = ri * (KEY_H + GAP) + GAP;
+      const x2 = x1 + KEY_W;
+      const y2 = y1 + KEY_H;
+      const cx = x1 + KEY_W/2;
+      const cy = y1 + KEY_H/2;
+      const hovered = fx >= x1 && fx <= x2 && fy >= y1 && fy <= y2;
+      if (hovered) hitKey = k;
+
+      // Background
+      ctx.fillStyle = k==='OK' ? '#0a5' : k==='<' ? '#044' : hovered ? '#444' : '#222';
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(x1,y1,KEY_W,KEY_H,5) : ctx.rect(x1,y1,KEY_W,KEY_H);
+      ctx.fill();
+      ctx.strokeStyle = hovered ? '#0ef' : '#555';
+      ctx.lineWidth   = hovered ? 2 : 1;
+      ctx.stroke();
+
+      // Progress fill
+      if (hovered && kbHoverKey===k && kbHoverFrames>0) {
+        const prog = Math.min(kbHoverFrames/KB_NEEDED,1);
+        ctx.fillStyle = 'rgba(0,230,255,0.35)';
+        ctx.fillRect(x1, y2 - KEY_H*prog, KEY_W, KEY_H*prog);
+      }
+
+      // Label
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.round(KEY_H*0.38)}px Nunito,sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(k==='<'?'⌫':k, cx, cy);
+    });
+  });
+
+  // Finger dot
+  if (fx > 0 && fy > 0) {
+    ctx.beginPath();
+    ctx.arc(fx, fy, 10, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(0,230,255,0.8)';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.fill(); ctx.stroke();
+  }
+
+  // Update hover state
+  if (hitKey && hitKey === kbHoverKey) {
+    kbHoverFrames++;
+    if (kbHoverFrames >= KB_NEEDED) {
+      handleKbKey(hitKey);
+      kbHoverFrames = 0;
+      kbHoverKey    = null;
+    }
+  } else {
+    kbHoverKey    = hitKey;
+    kbHoverFrames = hitKey ? 1 : 0;
+  }
+}
+
+function handleKbKey(k) {
+  const box = document.getElementById('kb-typed-box');
+  const res = document.getElementById('name-result');
+  if (k === '<') {
+    kbTyped = kbTyped.slice(0, -1);
+  } else if (k === 'OK') {
+    const target = mobileItem.name.toLowerCase();
+    const typed  = kbTyped.toLowerCase();
+    if (typed === target) {
+      res.textContent = '✅ Correct! Great job!';
+      res.style.color = '#4caf50';
+      mobilePtsEarned += 10; mobileNameCorrect = true;
+      stopKbCameraLoop();
+      setTimeout(goToColorStep, 1200);
+    } else {
+      res.textContent = `🤔 You typed "${kbTyped}" — try again!`;
+      res.style.color = '#ff9800';
+      kbTyped = '';
+    }
+  } else {
+    kbTyped += k;
+  }
+  if (box) box.textContent = kbTyped + '_' || '_';
+}
 
 function listenForName() {
   const SpeechRec = window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -1218,7 +1431,7 @@ function buildPaletteOverlay() {
   } else { existing.style.display='block'; }
 }
 
-function drawColorSwatchesOnCanvas(ctx, cw, ch, tx, ty) {
+function drawColorSwatchesOnCanvas(ctx, cw, ch, tx, ty, lm, canvasW, canvasH) {
   const cols=5, swatch=50, gap=10;
   const totalW=cols*(swatch+gap)-gap;
   const startX=(cw-totalW)/2;
@@ -1226,7 +1439,7 @@ function drawColorSwatchesOnCanvas(ctx, cw, ch, tx, ty) {
   const swatchAreaH=rows*(swatch+gap+18)+10;
   const startY=ch-swatchAreaH-20;
 
-  // Draw filled shape in top area
+  // Draw shape outline only (no fill until color selected)
   if (mobileItem) {
     const fillColor = mobileSelectedColor || 'transparent';
     const pts=getMobileGuideDots(mobileItem);
@@ -1243,49 +1456,84 @@ function drawColorSwatchesOnCanvas(ctx, cw, ch, tx, ty) {
       ctx.beginPath();
       pts.forEach((p,i)=>{const px=p.x*scale+ox,py=p.y*scale+oy;if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);});
       ctx.closePath();
-      ctx.fillStyle=fillColor;ctx.fill();
-      ctx.strokeStyle='rgba(255,255,255,0.9)';ctx.lineWidth=2.5;ctx.stroke();
+      ctx.fillStyle=fillColor; ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=2.5; ctx.stroke();
     }
   }
 
-  // Find suggested palette color using closest-color match
+  // Detect pinch from landmarks
+  let isPinching = false;
+  if (lm && canvasW && canvasH) {
+    const thumbX = (1 - lm[4].x) * canvasW;
+    const thumbY = lm[4].y * canvasH;
+    const pinchDist = Math.hypot(tx - thumbX, ty - thumbY);
+    isPinching = pinchDist < 40;
+  }
+
+  // Instruction label
+  ctx.save();
+  ctx.fillStyle = isPinching ? 'rgba(0,255,100,0.9)' : 'rgba(255,160,0,0.9)';
+  ctx.font = 'bold 15px Nunito,sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(isPinching ? '🤌 Pinching — hold!' : '🤌 Pinch to pick a color!', cw/2, startY - 8);
+  ctx.restore();
+
+  // Suggested color
   const suggestedHex = mobileItem ? getClosestColorHex(mobileItem.color) : null;
 
   // Draw swatches
   COLORS.forEach((c,i)=>{
-    const col=i%cols,row=Math.floor(i/cols);
+    const col=i%cols, row=Math.floor(i/cols);
     const cx=startX+col*(swatch+gap)+swatch/2;
     const cy=startY+row*(swatch+gap+18)+swatch/2;
-    const hovered=Math.hypot(tx-cx,ty-cy)<swatch/2+10;
-    if(hovered){
-      if(colorHoverHex===c.hex){
+    const hovered = Math.hypot(tx-cx, ty-cy) < swatch/2+10;
+
+    if (hovered && isPinching) {
+      if (colorHoverHex===c.hex) {
         colorHoverFrames++;
       } else {
         colorHoverHex=c.hex;
         colorHoverFrames=1;
       }
-      if(colorHoverFrames>=8 && mobileSelectedColor!==c.hex){
+      if (colorHoverFrames>=8 && mobileSelectedColor!==c.hex) {
         mobileSelectedColor=c.hex;
         showToast(`🎨 ${c.name} selected!`);
       }
+    } else if (!hovered || !isPinching) {
+      if (colorHoverHex===c.hex) {
+        colorHoverHex=null;
+        colorHoverFrames=0;
+      }
     }
+
     const isSuggested = suggestedHex && c.hex.toLowerCase()===suggestedHex.toLowerCase();
     const isSelected  = mobileSelectedColor===c.hex;
-    // Draw outer suggested ring first (behind swatch)
+
     if(isSuggested){
-      ctx.beginPath();ctx.arc(cx,cy,swatch/2+7,0,Math.PI*2);
-      ctx.strokeStyle='#ffd93d';ctx.lineWidth=3;ctx.setLineDash([5,3]);ctx.stroke();ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(cx,cy,swatch/2+7,0,Math.PI*2);
+      ctx.strokeStyle='#ffd93d'; ctx.lineWidth=3;
+      ctx.setLineDash([5,3]); ctx.stroke(); ctx.setLineDash([]);
     }
-    ctx.beginPath();ctx.arc(cx,cy,swatch/2,0,Math.PI*2);
-    ctx.fillStyle=c.hex;ctx.fill();
-    ctx.strokeStyle=isSelected?'#fff':(hovered?'#ff0':'rgba(255,255,255,0.3)');
-    ctx.lineWidth=isSelected?3:1.5;ctx.stroke();
-    // Label background + text
+
+    // Progress arc when pinching on this swatch
+    if (hovered && isPinching && colorHoverHex===c.hex && colorHoverFrames>0) {
+      const prog = Math.min(colorHoverFrames/8, 1);
+      ctx.beginPath();
+      ctx.arc(cx, cy, swatch/2+4, -Math.PI/2, -Math.PI/2 + prog*Math.PI*2);
+      ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.setLineDash([]); ctx.stroke();
+    }
+
+    ctx.beginPath(); ctx.arc(cx,cy,swatch/2,0,Math.PI*2);
+    ctx.fillStyle=c.hex; ctx.fill();
+    ctx.strokeStyle=isSelected?'#fff':(hovered&&isPinching?'#0f0':'rgba(255,255,255,0.3)');
+    ctx.lineWidth=isSelected?3:1.5; ctx.stroke();
+
     ctx.fillStyle='rgba(0,0,0,0.75)';
-    ctx.fillRect(cx-swatch/2,cy+swatch/2+2,swatch,16);
+    ctx.fillRect(cx-swatch/2, cy+swatch/2+2, swatch, 16);
     ctx.fillStyle=isSuggested?'#ffd93d':'#fff';
-    ctx.font=`${isSuggested?'bold ':''} 9px sans-serif`;ctx.textAlign='center';
-    ctx.fillText(isSuggested?'⭐'+c.name:c.name,cx,cy+swatch/2+13);
+    ctx.font=`${isSuggested?'bold ':''} 9px sans-serif`;
+    ctx.textAlign='center';
+    ctx.fillText(isSuggested?'⭐'+c.name:c.name, cx, cy+swatch/2+13);
   });
 }
 
@@ -1406,6 +1654,7 @@ async function completeMobileItem() {
 function closeMobileDraw() {
   if(mobileStream){ mobileStream.getTracks().forEach(t=>t.stop()); mobileStream=null; }
   stopCameraLoop();
+  stopKbCameraLoop();
   document.getElementById('mobile-draw-modal').style.display='none';
 
   document.getElementById('mobile-loading').style.display='flex';

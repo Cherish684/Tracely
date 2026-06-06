@@ -342,65 +342,242 @@ def draw_celebration(overlay, W, H, t, msg1="AMAZING! 🎉", msg2=""):
                                                                 
                          
                                                                 
+# ── Synthetic letter templates (no download needed) ───────────────────────────
+def _build_letter_templates():
+    """Generate 28x28 images for A-Z using OpenCV fonts. Returns dict {letter: [imgs]}"""
+    templates = {}
+    fonts     = [cv2.FONT_HERSHEY_SIMPLEX, cv2.FONT_HERSHEY_DUPLEX,
+                 cv2.FONT_HERSHEY_COMPLEX, cv2.FONT_HERSHEY_TRIPLEX]
+    scales    = [0.7, 0.85, 1.0]
+    thickness = [1, 2]
+
+    for i in range(26):
+        letter = chr(ord('A') + i)
+        imgs   = []
+        for font in fonts:
+            for scale in scales:
+                for thick in thickness:
+                    img = np.zeros((28, 28), dtype=np.uint8)
+                    (tw, th), _ = cv2.getTextSize(letter, font, scale, thick)
+                    ox = max(0, (28 - tw) // 2)
+                    oy = max(th, (28 + th) // 2)
+                    cv2.putText(img, letter, (ox, oy), font, scale, 255, thick, cv2.LINE_AA)
+                    # Slight variations: original + horizontal flip
+                    imgs.append(img.flatten().astype(np.float32))
+                    imgs.append(cv2.flip(img, 1).flatten().astype(np.float32))
+        templates[letter] = imgs
+    return templates
+
+_LETTER_TEMPLATES = None
+
+def _get_templates():
+    global _LETTER_TEMPLATES
+    if _LETTER_TEMPLATES is None:
+        _LETTER_TEMPLATES = _build_letter_templates()
+    return _LETTER_TEMPLATES
+
+def _stroke_to_letter(stroke_pts):
+    """Convert fingertip stroke to letter by comparing with synthetic templates."""
+    if len(stroke_pts) < 5:
+        return '?'
+
+    # Draw stroke onto 28x28 canvas
+    img    = np.zeros((28, 28), dtype=np.uint8)
+    xs     = [p[0] for p in stroke_pts]
+    ys     = [p[1] for p in stroke_pts]
+    mn_x, mx_x = min(xs), max(xs)
+    mn_y, mx_y = min(ys), max(ys)
+    span   = max(mx_x - mn_x, mx_y - mn_y, 1)
+    margin = 3
+    scale  = (28 - 2 * margin) / span
+    norm   = [(int((x - mn_x) * scale) + margin,
+               int((y - mn_y) * scale) + margin) for x, y in stroke_pts]
+    for k in range(1, len(norm)):
+        cv2.line(img, norm[k-1], norm[k], 255, 2)
+    drawn = img.flatten().astype(np.float32)
+
+    # Compare against all templates, pick closest by Euclidean distance
+    templates  = _get_templates()
+    best_letter, best_dist = '?', float('inf')
+    for letter, imgs in templates.items():
+        for tmpl in imgs:
+            dist = float(np.linalg.norm(drawn - tmpl))
+            if dist < best_dist:
+                best_dist   = dist
+                best_letter = letter
+    return best_letter
+
+# ── naming step (hover keyboard) ──────────────────────────────────────────────
 def naming_step(item_name, W, H, cap):
-\
-\
-\
-       
+    start_t  = time.time()
     typed    = ""
     wrong    = False
-    start_t  = time.time()
+
+    # MediaPipe hand detector
+    base_opts = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
+    opts      = mp_vision.HandLandmarkerOptions(
+                    base_options=base_opts, num_hands=1,
+                    min_hand_detection_confidence=0.55,
+                    min_hand_presence_confidence=0.55)
+    detector  = mp_vision.HandLandmarker.create_from_options(opts)
+
+    # Keyboard layout: 3 rows + backspace + enter
+    KEYS = [
+        list("QWERTYUIOP"),
+        list("ASDFGHJKL"),
+        list("ZXCVBNM") + ["<", "OK"]
+    ]
+
+    KEY_W, KEY_H = 56, 52
+    KEY_GAP      = 8
+    HOVER_NEEDED = 18   # frames to select a key
+
+    hover_key    = None
+    hover_frames = 0
+
+    # Precompute key rects: {letter: (x1,y1,x2,y2)}
+    def build_key_rects():
+        rects = {}
+        kb_total_w = 10 * (KEY_W + KEY_GAP) - KEY_GAP
+        kb_x0      = (W - kb_total_w) // 2
+        kb_y0      = H - 3 * (KEY_H + KEY_GAP) - 20
+        for row_i, row in enumerate(KEYS):
+            row_w   = len(row) * (KEY_W + KEY_GAP) - KEY_GAP
+            row_x0  = (W - row_w) // 2
+            for col_i, k in enumerate(row):
+                x1 = row_x0 + col_i * (KEY_W + KEY_GAP)
+                y1 = kb_y0  + row_i * (KEY_H + KEY_GAP)
+                x2 = x1 + KEY_W
+                y2 = y1 + KEY_H
+                rects[k] = (x1, y1, x2, y2)
+        return rects
+
+    key_rects = build_key_rects()
 
     while True:
         ret, frame = cap.read()
         if not ret: continue
         frame = cv2.flip(frame, 1)
 
-                      
-        panel = frame.copy()
-        cv2.rectangle(panel,(0,0),(W,H),(0,0,0),-1)
+        panel   = frame.copy()
+        cv2.rectangle(panel, (0,0), (W,H), (0,0,0), -1)
         display = cv2.addWeighted(frame, 0.3, panel, 0.7, 0)
 
-               
-        cv2.putText(display,"What did you draw?",(W//2-250,H//2-130),
-                    cv2.FONT_HERSHEY_DUPLEX,1.4,(0,0,0),6)
-        cv2.putText(display,"What did you draw?",(W//2-250,H//2-130),
-                    cv2.FONT_HERSHEY_DUPLEX,1.4,(0,230,255),3)
+        # Detect fingertip
+        fx, fy = -1, -1
+        rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = detector.detect(mp_img)
+        if result.hand_landmarks:
+            lm = result.hand_landmarks[0]
+            fx = int(lm[8].x * W)
+            fy = int(lm[8].y * H)
+            cv2.circle(display, (fx, fy), 14, (0,255,255), -1)
+            cv2.circle(display, (fx, fy), 14, (255,255,255), 2)
 
-                   
-        box_x, box_y, box_w, box_h = W//2-250, H//2-80, 500, 60
+        # Find hovered key
+        this_hover = None
+        if fx != -1:
+            for k, (x1,y1,x2,y2) in key_rects.items():
+                if x1 <= fx <= x2 and y1 <= fy <= y2:
+                    this_hover = k
+                    break
+
+        if this_hover == hover_key and this_hover is not None:
+            hover_frames += 1
+        else:
+            hover_key    = this_hover
+            hover_frames = 1 if this_hover else 0
+
+        # Key selected
+        if hover_frames >= HOVER_NEEDED:
+            if hover_key == "<":
+                typed = typed[:-1]
+            elif hover_key == "OK":
+                if typed.strip().lower() == item_name.lower():
+                    detector.close()
+                    return time.time() - start_t
+                else:
+                    wrong = True
+                    typed = ""
+            else:
+                typed += hover_key
+                wrong  = False
+            hover_frames = 0
+            hover_key    = None
+
+        # Draw keyboard
+        for k, (x1,y1,x2,y2) in key_rects.items():
+            is_hover = (k == hover_key)
+            progress = hover_frames / HOVER_NEEDED if is_hover else 0
+
+            # Key background
+            if k == "OK":
+                bg = (0,160,0)
+            elif k == "<":
+                bg = (0,0,180)
+            elif is_hover:
+                bg = (80,80,80)
+            else:
+                bg = (40,40,40)
+
+            cv2.rectangle(display, (x1,y1), (x2,y2), bg, -1)
+            cv2.rectangle(display, (x1,y1), (x2,y2), (120,120,120), 1)
+
+            # Progress fill on hover
+            if is_hover and progress > 0:
+                fill_w = int((x2-x1) * progress)
+                cv2.rectangle(display, (x1,y1), (x1+fill_w, y2), (0,200,255), -1)
+                cv2.rectangle(display, (x1,y1), (x2,y2), (0,230,255), 2)
+
+            # Key label
+            lbl   = k
+            scale = 0.55 if len(k) == 1 else 0.42
+            (tw,th),_ = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
+            tx = x1 + (KEY_W - tw)//2
+            ty = y1 + (KEY_H + th)//2
+            cv2.putText(display, lbl, (tx,ty),
+                        cv2.FONT_HERSHEY_SIMPLEX, scale, (255,255,255), 2)
+
+        # Title
+        cv2.putText(display, "Spell the name!", (W//2-180, 45),
+                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (0,0,0), 6)
+        cv2.putText(display, "Spell the name!", (W//2-180, 45),
+                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (0,230,255), 3)
+
+        # Typed text box
+        box_x, box_y, box_w, box_h = W//2-250, 60, 500, 55
         cv2.rectangle(display,(box_x,box_y),(box_x+box_w,box_y+box_h),(255,255,255),2)
-        cv2.putText(display, typed+"_", (box_x+12, box_y+42),
+        cv2.putText(display, typed+"_", (box_x+12, box_y+40),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255,255,255), 2)
 
-              
-        cv2.putText(display,"Type the name and press ENTER",(W//2-260,H//2+20),
-                    cv2.FONT_HERSHEY_SIMPLEX,0.7,(180,180,180),1)
+        cv2.putText(display, "Hover finger on a key to select it",
+                    (W//2-230, 130),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180,180,180), 1)
 
-                       
         if wrong:
-            cv2.putText(display,"Try again! Wrong name 😊",(W//2-220,H//2+65),
-                        cv2.FONT_HERSHEY_SIMPLEX,0.85,(0,60,255),2)
+            cv2.putText(display, "Try again! Wrong name",
+                        (W//2-190, 165),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0,60,255), 2)
 
-                         
-        cv2.putText(display,"+10 pts for correct name!",(W//2-190,H//2+110),
-                    cv2.FONT_HERSHEY_SIMPLEX,0.7,(0,215,100),2)
+        cv2.putText(display, "+10 pts for correct name!",
+                    (W//2-190, 195),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,215,100), 2)
 
         cv2.imshow("DrawBook", display)
 
-        key = cv2.waitKey(30) & 0xFF
-        if key == 27: return None        
-        elif key == 13:         
+        key = cv2.waitKey(1) & 0xFF
+        if key == 27:
+            detector.close(); return None
+        elif key == 13:
             if typed.strip().lower() == item_name.lower():
+                detector.close()
                 return time.time() - start_t
             else:
                 wrong = True
                 typed = ""
-        elif key == 8:             
+        elif key == 8:
             typed = typed[:-1]
-            wrong = False
-        elif 32 <= key <= 126:
-            typed += chr(key)
             wrong = False
 
                                                                 
@@ -471,11 +648,7 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
         pts_arr = np.array(dot_px, np.int32)
         cv2.polylines(display, [pts_arr], closed, (255,255,255), 2, cv2.LINE_AA)
 
-        # Title
-        cv2.putText(display, "Point your finger at a color!", (W//2-260, 55),
-                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (0,0,0), 6)
-        cv2.putText(display, "Point your finger at a color!", (W//2-260, 55),
-                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (255,160,0), 3)
+        # Title drawn at end of loop
 
         # --- Suggested color label (top-left, outside palette) ---
         sug_box_x, sug_box_y = 20, 80
@@ -501,78 +674,103 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
         cv2.putText(display, "Shape Outline", (gx+gw//2-60, gy-10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200,200,200), 1)
 
-        # Detect finger
-        fx, fy = -1, -1
-        rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        result = detector.detect(mp_img)
+        # Detect hand — index fingertip (8) and thumb tip (4)
+        fx, fy   = -1, -1
+        pinching = False
+        rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_img   = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result   = detector.detect(mp_img)
         if result.hand_landmarks:
-            lm = result.hand_landmarks[0]
-            fx = int(lm[8].x * W)
-            fy = int(lm[8].y * H)
-            cv2.circle(display, (fx, fy), 14, (0,255,255), -1)
-            cv2.circle(display, (fx, fy), 14, (255,255,255), 2)
+            lm   = result.hand_landmarks[0]
+            fx   = int(lm[8].x * W)
+            fy   = int(lm[8].y * H)
+            tx   = int(lm[4].x * W)
+            ty   = int(lm[4].y * H)
 
-        # Find which swatch (if any) finger is over this frame
+            # Pinch = distance between index tip and thumb tip < threshold
+            pinch_dist = math.hypot(fx - tx, fy - ty)
+            PINCH_THRESH = 40   # pixels
+            pinching = pinch_dist < PINCH_THRESH
+
+            # Draw index tip
+            dot_col = (0,255,100) if pinching else (0,255,255)
+            cv2.circle(display, (fx, fy), 14, dot_col, -1)
+            cv2.circle(display, (fx, fy), 14, (255,255,255), 2)
+            # Draw thumb tip
+            cv2.circle(display, (tx, ty), 10, dot_col, -1)
+            cv2.circle(display, (tx, ty), 10, (255,255,255), 2)
+            # Line between them showing pinch distance
+            cv2.line(display, (fx,fy), (tx,ty), dot_col, 2)
+
+        # Find which swatch finger is over
         this_hover = -1
         if fx != -1:
             for i, (bgr, name) in enumerate(PALETTE):
-                col = i % cols
-                row = i // cols
+                col  = i % cols
+                row  = i // cols
                 cx_s = pal_x0 + col * (swatch + gap) + swatch // 2
                 cy_s = pal_y0 + row * (swatch + gap) + swatch // 2
                 if abs(fx - cx_s) < swatch//2 + 8 and abs(fy - cy_s) < swatch//2 + 8:
                     this_hover = i
                     break
 
-        if this_hover == hover_idx and this_hover != -1:
-            hover_frames += 1
+        # Only count hover frames when pinching
+        if this_hover != -1 and pinching:
+            if this_hover == hover_idx:
+                hover_frames += 1
+            else:
+                hover_idx    = this_hover
+                hover_frames = 1
         else:
             hover_idx    = this_hover
-            hover_frames = 1 if this_hover != -1 else 0
+            hover_frames = 0
 
         if hover_frames >= 8:
             chosen_color = PALETTE[hover_idx][0]
 
-            # Fill the guide thumbnail with the chosen color (shape only)
+            # Fill guide thumbnail for confirmation
             filled_guide = guide_full.copy()
             cv2.fillPoly(filled_guide, [np.array(dot_px, np.int32)], chosen_color)
             cv2.polylines(filled_guide, [np.array(dot_px, np.int32)], closed, (255,255,255), 2, cv2.LINE_AA)
             filled_thumb = cv2.resize(filled_guide, (gw, gh))
-
-            # Show the filled thumbnail in the guide panel for confirmation
             gx, gy = W - gw - 20, 80
             display[gy:gy+gh, gx:gx+gw] = filled_thumb
             cv2.rectangle(display, (gx-2, gy-2), (gx+gw+2, gy+gh+2), chosen_color, 3)
             cv2.imshow("DrawBook", display)
-            cv2.waitKey(400)  # brief pause so user sees the filled shape
+            cv2.waitKey(400)
 
             detector.close()
             return chosen_color, time.time() - start_t
 
-        # Draw swatches (no suggested ring on swatches)
+        # Draw swatches
         for i, (bgr, name) in enumerate(PALETTE):
-            col = i % cols
-            row = i // cols
-            px  = pal_x0 + col * (swatch + gap)
-            py  = pal_y0 + row * (swatch + gap)
+            col  = i % cols
+            row  = i // cols
+            px   = pal_x0 + col * (swatch + gap)
+            py   = pal_y0 + row * (swatch + gap)
             cx_s = px + swatch // 2
             cy_s = py + swatch // 2
 
             cv2.rectangle(display, (px, py), (px+swatch, py+swatch), bgr, -1)
-            border_col = (0,255,255) if i == hover_idx else (100,100,100)
+            border_col = (0,255,100) if i == hover_idx else (100,100,100)
             border_w   = 3          if i == hover_idx else 1
             cv2.rectangle(display, (px, py), (px+swatch, py+swatch), border_col, border_w)
-            # Progress arc while hovering
+            # Progress arc while pinching
             if i == hover_idx and hover_frames > 0:
                 angle = int(360 * hover_frames / 8)
                 cv2.ellipse(display, (cx_s, cy_s), (swatch//2+6, swatch//2+6),
                             -90, 0, angle, (255,255,255), 3)
-            # Color name with dark background
-            tx, ty = px, py + swatch + 18
+            # Color name
+            tx2, ty2 = px, py + swatch + 18
             (tw, th), _ = cv2.getTextSize(name, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-            cv2.rectangle(display, (tx-2, ty-th-2), (tx+tw+2, ty+4), (0,0,0), -1)
-            cv2.putText(display, name, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+            cv2.rectangle(display, (tx2-2, ty2-th-2), (tx2+tw+2, ty2+4), (0,0,0), -1)
+            cv2.putText(display, name, (tx2, ty2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+
+        # Update title to reflect pinch interaction
+        cv2.putText(display, "Pinch to pick a color!", (W//2-230, 55),
+                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (0,0,0), 6)
+        cv2.putText(display, "Pinch to pick a color!", (W//2-230, 55),
+                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (255,160,0), 3)
 
         cv2.putText(display, "ESC to quit", (20, H-20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (150,150,150), 1)
