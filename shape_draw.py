@@ -806,9 +806,9 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
             cv2.circle(display, (tx, ty), 10, (255,255,255), 2)
             cv2.line(display, (fx,fy), (tx,ty), dot_col, 2)
 
-        # Find which swatch finger is over
+        # Find which swatch finger is over (only when not doing thumbs-up)
         this_hover = -1
-        if fx != -1:
+        if fx != -1 and not thumbs_up_col:
             for i, (bgr, name) in enumerate(PALETTE):
                 col  = i % cols
                 row  = i // cols
@@ -1131,27 +1131,28 @@ def main():
                 cv2.circle(display, tip_px, 13, cc, 2)
                 cv2.circle(display, tip_px,  4, cc, -1)
 
-                if all_done and det.hand_landmarks:
-                    lms_t = det.hand_landmarks[0]
-                    thumb_up  = lms_t[4].y  < lms_t[2].y
-                    index_dn  = lms_t[8].y  > lms_t[6].y
-                    middle_dn = lms_t[12].y > lms_t[10].y
-                    ring_dn   = lms_t[16].y > lms_t[14].y
-                    pinky_dn  = lms_t[20].y > lms_t[18].y
-                    is_thumbs_up = thumb_up and index_dn and middle_dn and ring_dn and pinky_dn
-                    if is_thumbs_up:
-                        done_hover_frames += 1
-                        done_trace_missing = 0
-                    else:
-                        done_trace_missing += 1
-                        if done_trace_missing > 4:
-                            done_hover_frames = 0
-                            done_trace_missing = 0
-                elif all_done and not det.hand_landmarks:
+            # Thumbs-up detection runs independently of tip_px (index is DOWN during thumbs-up)
+            if all_done and det.hand_landmarks:
+                lms_t = det.hand_landmarks[0]
+                thumb_up  = lms_t[4].y  < lms_t[2].y
+                index_dn  = lms_t[8].y  > lms_t[6].y
+                middle_dn = lms_t[12].y > lms_t[10].y
+                ring_dn   = lms_t[16].y > lms_t[14].y
+                pinky_dn  = lms_t[20].y > lms_t[18].y
+                is_thumbs_up = thumb_up and index_dn and middle_dn and ring_dn and pinky_dn
+                if is_thumbs_up:
+                    done_hover_frames += 1
+                    done_trace_missing = 0
+                else:
                     done_trace_missing += 1
                     if done_trace_missing > 4:
                         done_hover_frames = 0
                         done_trace_missing = 0
+            elif all_done and not det.hand_landmarks:
+                done_trace_missing += 1
+                if done_trace_missing > 4:
+                    done_hover_frames = 0
+                    done_trace_missing = 0
 
             if celebrating:
                 celeb = np.zeros((H,W,3),dtype=np.uint8)
