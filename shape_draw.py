@@ -240,7 +240,7 @@ def dist(a, b):
     return math.hypot(a[0]-b[0], a[1]-b[1])
 
 def fingers_up(lms):
-    tips=[4,8,12,16,20]; bot=[3,6,10,14,18]
+    tips=[4,8,12,16,20]; bot=[2,6,10,14,18]
     up=[lms[tips[0]].x < lms[bot[0]].x]
     for i in range(1,5): up.append(lms[tips[i]].y < lms[bot[i]].y)
     return up
@@ -278,7 +278,8 @@ def draw_star_shape(img, cx, cy, r, col):
               (int(cx+r*.4*math.cos(ai)),int(cy+r*.4*math.sin(ai)))]
     cv2.fillPoly(img,[np.array(pts,np.int32)],col)
 
-def draw_hud(overlay, item_name, level, n_done, n_total, W, H, cur_mode, step, pts_so_far):
+def draw_hud(overlay, item_name, level, n_done, n_total, W, H, cur_mode, step, pts_so_far,
+             all_done=False, done_hover_frames=0, HOVER_NEEDED=18):
                         
     cv2.putText(overlay, item_name.upper(), (20,50),
                 cv2.FONT_HERSHEY_DUPLEX, 1.4, (0,0,0), 6)
@@ -324,6 +325,24 @@ def draw_hud(overlay, item_name, level, n_done, n_total, W, H, cur_mode, step, p
         for i in range(total_stars):
             c = (0,215,255) if i<filled else (160,160,160)
             draw_star_shape(overlay, x0+i*22, y0, 8, c)
+
+    # Done Tracing button — shown when all dots visited (thumbs up to confirm)
+    if all_done and step == 1:
+        bw, bh = 260, 55
+        bx = W//2 - bw//2
+        by = H // 2 + 120
+        cv2.rectangle(overlay, (bx, by), (bx+bw, by+bh), (0,180,0), -1)
+        cv2.rectangle(overlay, (bx, by), (bx+bw, by+bh), (0,255,0), 3)
+        # Thumbs-up progress fill
+        if done_hover_frames > 0:
+            prog = min(done_hover_frames / HOVER_NEEDED, 1.0)
+            cv2.rectangle(overlay, (bx, by), (bx + int(bw*prog), by+bh), (0,255,120), -1)
+        lbl = "👍 Done Tracing"
+        (tw, th), _ = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+        cv2.putText(overlay, lbl, (bx + (bw-tw)//2, by + (bh+th)//2),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0), 4)
+        cv2.putText(overlay, lbl, (bx + (bw-tw)//2, by + (bh+th)//2),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
 
 def draw_celebration(overlay, W, H, t, msg1="AMAZING! 🎉", msg2=""):
     rng = np.random.default_rng(int(t*15) % 9999)
@@ -416,40 +435,46 @@ def naming_step(item_name, W, H, cap):
     # MediaPipe hand detector
     base_opts = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
     opts      = mp_vision.HandLandmarkerOptions(
-                    base_options=base_opts, num_hands=1,
-                    min_hand_detection_confidence=0.55,
-                    min_hand_presence_confidence=0.55)
+                    base_options=base_opts,
+                    running_mode=mp_vision.RunningMode.VIDEO,
+                    num_hands=1,
+                    min_hand_detection_confidence=0.7,
+                    min_hand_presence_confidence=0.7,
+                    min_tracking_confidence=0.65)
     detector  = mp_vision.HandLandmarker.create_from_options(opts)
 
     # Keyboard layout: 3 rows + backspace + enter
     KEYS = [
         list("QWERTYUIOP"),
         list("ASDFGHJKL"),
-        list("ZXCVBNM") + ["<", "OK"]
+        list("ZXCVBNM") + ["<"]
     ]
 
     KEY_W, KEY_H = 56, 52
     KEY_GAP      = 8
     HOVER_NEEDED = 18   # frames to select a key
 
-    hover_key    = None
-    hover_frames = 0
+    hover_key      = None
+    hover_frames   = 0
+    ok_hover_frames = 0
+    ok_missing      = 0
 
     # Precompute key rects: {letter: (x1,y1,x2,y2)}
     def build_key_rects():
         rects = {}
         kb_total_w = 10 * (KEY_W + KEY_GAP) - KEY_GAP
         kb_x0      = (W - kb_total_w) // 2
-        kb_y0      = H - 3 * (KEY_H + KEY_GAP) - 20
+        kb_y0      = H // 2 - 3 * (KEY_H + KEY_GAP) // 2
         for row_i, row in enumerate(KEYS):
-            row_w   = len(row) * (KEY_W + KEY_GAP) - KEY_GAP
-            row_x0  = (W - row_w) // 2
-            for col_i, k in enumerate(row):
-                x1 = row_x0 + col_i * (KEY_W + KEY_GAP)
-                y1 = kb_y0  + row_i * (KEY_H + KEY_GAP)
-                x2 = x1 + KEY_W
-                y2 = y1 + KEY_H
-                rects[k] = (x1, y1, x2, y2)
+            row_w = sum(KEY_W*2 if k == '<' else KEY_W for k in row) + KEY_GAP*(len(row)-1)
+            x_cursor = (W - row_w) // 2
+            for k in row:
+                kw = KEY_W * 2 if k == '<' else KEY_W
+                y1 = kb_y0 + row_i * (KEY_H + KEY_GAP)
+                rects[k] = (x_cursor, y1, x_cursor + kw, y1 + KEY_H)
+                x_cursor += kw + KEY_GAP
+        ok_y1 = kb_y0 + len(KEYS) * (KEY_H + KEY_GAP)
+        rects["OK"] = (kb_x0, ok_y1, kb_x0 + kb_total_w, ok_y1 + KEY_H)
         return rects
 
     key_rects = build_key_rects()
@@ -459,26 +484,47 @@ def naming_step(item_name, W, H, cap):
         if not ret: continue
         frame = cv2.flip(frame, 1)
 
-        panel   = frame.copy()
-        cv2.rectangle(panel, (0,0), (W,H), (0,0,0), -1)
-        display = cv2.addWeighted(frame, 0.3, panel, 0.7, 0)
+        display = frame.copy()
 
-        # Detect fingertip
+        # Detect fingertip — thumbs up activates OK; index finger navigates keys
         fx, fy = -1, -1
+        thumbs_up_detected = False
         rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        result = detector.detect(mp_img)
+        result = detector.detect_for_video(mp_img, int(time.time() * 1000))
         if result.hand_landmarks:
             lm = result.hand_landmarks[0]
-            fx = int(lm[8].x * W)
-            fy = int(lm[8].y * H)
-            cv2.circle(display, (fx, fy), 14, (0,255,255), -1)
-            cv2.circle(display, (fx, fy), 14, (255,255,255), 2)
+            thumb_up  = lm[4].y  < lm[2].y
+            index_dn  = lm[8].y  > lm[6].y
+            middle_dn = lm[12].y > lm[10].y
+            ring_dn   = lm[16].y > lm[14].y
+            pinky_dn  = lm[20].y > lm[18].y
+            thumbs_up_detected = thumb_up and index_dn and middle_dn and ring_dn and pinky_dn
 
-        # Find hovered key
+            CONN2 = [(0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),(5,9),(9,10),
+                     (10,11),(11,12),(9,13),(13,14),(14,15),(15,16),(13,17),(17,18),
+                     (18,19),(19,20),(0,17)]
+            skel_pts = [(int(lm[i].x*W), int(lm[i].y*H)) for i in range(21)]
+            skel_col = (0, 255, 80)  if thumbs_up_detected else (80, 220, 80)
+            dot_col2 = (0, 255, 80)  if thumbs_up_detected else (200, 255, 200)
+            for a, b in CONN2:
+                cv2.line(display, skel_pts[a], skel_pts[b], skel_col, 2)
+            for p in skel_pts:
+                cv2.circle(display, p, 4, dot_col2, -1)
+
+            index_up  = lm[8].y  < lm[6].y
+            if index_up and middle_dn and ring_dn and pinky_dn:
+                fx = int(lm[8].x * W)
+                fy = int(lm[8].y * H)
+            cv2.circle(display, (int(lm[8].x*W), int(lm[8].y*H)), 14,
+                       (0,255,255) if fx != -1 else (100,100,100), -1)
+            cv2.circle(display, (int(lm[8].x*W), int(lm[8].y*H)), 14, (255,255,255), 2)
+
         this_hover = None
         if fx != -1:
             for k, (x1,y1,x2,y2) in key_rects.items():
+                if k == "OK":
+                    continue
                 if x1 <= fx <= x2 and y1 <= fy <= y2:
                     this_hover = k
                     break
@@ -489,31 +535,59 @@ def naming_step(item_name, W, H, cap):
             hover_key    = this_hover
             hover_frames = 1 if this_hover else 0
 
-        # Key selected
-        if hover_frames >= HOVER_NEEDED:
-            if hover_key == "<":
+        if thumbs_up_detected and typed.strip() != "":
+            ok_hover_frames += 1
+            ok_missing = 0
+        else:
+            ok_missing += 1
+            if ok_missing > 4:
+                ok_hover_frames = 0
+                ok_missing = 0
+
+        ok_triggered = (ok_hover_frames >= HOVER_NEEDED)
+        if hover_frames >= HOVER_NEEDED or ok_triggered:
+            selected_key = "OK" if ok_triggered else hover_key
+            if selected_key == "<":
                 typed = typed[:-1]
-            elif hover_key == "OK":
+            elif selected_key == "OK":
                 if typed.strip().lower() == item_name.lower():
+                    elapsed = time.time() - start_t   # capture before celebration
+                    # Show celebration for 1.5 seconds
+                    t_end = time.time() + 1.5
+                    while time.time() < t_end:
+                        ret, frame = cap.read()
+                        if not ret: break
+                        frame = cv2.flip(frame, 1)
+                        display = frame.copy()
+                        celeb = np.zeros((H, W, 3), dtype=np.uint8)
+                        draw_celebration(celeb, W, H, time.time(),
+                                         "CORRECT! +10 pts 🎉",
+                                         f"'{item_name.upper()}' — Moving to Step 3!")
+                        display = alpha_blend(display, celeb, 0.80)
+                        cv2.imshow("DrawBook", display)
+                        cv2.waitKey(30)
                     detector.close()
-                    return time.time() - start_t
+                    return elapsed
                 else:
                     wrong = True
                     typed = ""
             else:
-                typed += hover_key
+                typed += selected_key
                 wrong  = False
-            hover_frames = 0
-            hover_key    = None
+            hover_frames    = 0
+            hover_key       = None
+            ok_hover_frames = 0
+            ok_missing      = 0
 
-        # Draw keyboard
         for k, (x1,y1,x2,y2) in key_rects.items():
             is_hover = (k == hover_key)
-            progress = hover_frames / HOVER_NEEDED if is_hover else 0
-
-            # Key background
             if k == "OK":
-                bg = (0,160,0)
+                progress = ok_hover_frames / HOVER_NEEDED
+            else:
+                progress = hover_frames / HOVER_NEEDED if is_hover else 0
+
+            if k == "OK":
+                bg = (0, int(160 + 60 * min(ok_hover_frames / HOVER_NEEDED, 1.0)), 0)
             elif k == "<":
                 bg = (0,0,180)
             elif is_hover:
@@ -524,44 +598,52 @@ def naming_step(item_name, W, H, cap):
             cv2.rectangle(display, (x1,y1), (x2,y2), bg, -1)
             cv2.rectangle(display, (x1,y1), (x2,y2), (120,120,120), 1)
 
-            # Progress fill on hover
-            if is_hover and progress > 0:
+            if k == "OK":
+                if ok_hover_frames > 0:
+                    fill_w = int((x2-x1) * progress)
+                    cv2.rectangle(display, (x1,y1), (x1+fill_w, y2), (0,200,255), -1)
+                    cv2.rectangle(display, (x1,y1), (x2,y2), (0,230,255), 2)
+            elif is_hover and progress > 0:
                 fill_w = int((x2-x1) * progress)
                 cv2.rectangle(display, (x1,y1), (x1+fill_w, y2), (0,200,255), -1)
                 cv2.rectangle(display, (x1,y1), (x2,y2), (0,230,255), 2)
 
             # Key label
-            lbl   = k
+            lbl   = "👍" if k == "OK" else k
+            kw    = x2 - x1
             scale = 0.55 if len(k) == 1 else 0.42
             (tw,th),_ = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
-            tx = x1 + (KEY_W - tw)//2
+            tx = x1 + (kw - tw)//2
             ty = y1 + (KEY_H + th)//2
             cv2.putText(display, lbl, (tx,ty),
                         cv2.FONT_HERSHEY_SIMPLEX, scale, (255,255,255), 2)
 
         # Title
-        cv2.putText(display, "Spell the name!", (W//2-180, 45),
+        cv2.putText(display, "Spell the name!", (W//2-180, H-200),
                     cv2.FONT_HERSHEY_DUPLEX, 1.3, (0,0,0), 6)
-        cv2.putText(display, "Spell the name!", (W//2-180, 45),
+        cv2.putText(display, "Spell the name!", (W//2-180, H-200),
                     cv2.FONT_HERSHEY_DUPLEX, 1.3, (0,230,255), 3)
 
         # Typed text box
-        box_x, box_y, box_w, box_h = W//2-250, 60, 500, 55
+        box_x, box_y, box_w, box_h = W//2-250, H-175, 500, 55
         cv2.rectangle(display,(box_x,box_y),(box_x+box_w,box_y+box_h),(255,255,255),2)
         cv2.putText(display, typed+"_", (box_x+12, box_y+40),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255,255,255), 2)
 
         cv2.putText(display, "Hover finger on a key to select it",
-                    (W//2-230, 130),
+                    (W//2-230, H-108),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180,180,180), 1)
+        cv2.putText(display, "👍 Thumbs Up to confirm  |  ☝ Index finger to type",
+                    (W//2-230, H-82),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,215,255), 1)
 
         if wrong:
             cv2.putText(display, "Try again! Wrong name",
-                        (W//2-190, 165),
+                        (W//2-190, H-80),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0,60,255), 2)
 
         cv2.putText(display, "+10 pts for correct name!",
-                    (W//2-190, 195),
+                    (W//2-190, H-50),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,215,100), 2)
 
         cv2.imshow("DrawBook", display)
@@ -628,21 +710,27 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
 
     # MediaPipe setup
     base_opts = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
-    opts = mp_vision.HandLandmarkerOptions(base_options=base_opts, num_hands=1,
-        min_hand_detection_confidence=0.55, min_hand_presence_confidence=0.55)
+    opts = mp_vision.HandLandmarkerOptions(base_options=base_opts,
+        running_mode=mp_vision.RunningMode.VIDEO,
+        num_hands=1,
+        min_hand_detection_confidence=0.7,
+        min_hand_presence_confidence=0.7,
+        min_tracking_confidence=0.65)
     detector = mp_vision.HandLandmarker.create_from_options(opts)
 
-    hover_idx    = -1   # swatch index currently hovered
-    hover_frames = 0    # consecutive frames hovering that swatch
+    hover_idx    = -1
+    hover_frames = 0
+    done_col_frames = 0
+    done_col_missing = 0
+    selected_color  = None
+    filled_thumb    = None
 
     while True:
         ret, frame = cap.read()
         if not ret: continue
         frame = cv2.flip(frame, 1)
 
-        panel = frame.copy()
-        cv2.rectangle(panel, (0,0), (W,H), (0,0,0), -1)
-        display = cv2.addWeighted(frame, 0.25, panel, 0.75, 0)
+        display = frame.copy()
 
         # Draw empty shape outline in center of screen
         pts_arr = np.array(dot_px, np.int32)
@@ -667,19 +755,20 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
         cv2.putText(display, suggested_name, (sug_box_x + 38, circle_cy + 6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,215,255), 2)
 
-        # Guide thumbnail (outline only)
         gx, gy = W - gw - 20, 80
-        display[gy:gy+gh, gx:gx+gw] = guide_thumb
-        cv2.rectangle(display, (gx-2,gy-2), (gx+gw+2,gy+gh+2), (255,255,255), 2)
+        thumb_to_draw = filled_thumb if filled_thumb is not None else guide_thumb
+        display[gy:gy+gh, gx:gx+gw] = thumb_to_draw
+        border_col_t = tuple(int(c) for c in selected_color) if selected_color is not None else (255,255,255)
+        cv2.rectangle(display, (gx-2,gy-2), (gx+gw+2,gy+gh+2), border_col_t, 2)
         cv2.putText(display, "Shape Outline", (gx+gw//2-60, gy-10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200,200,200), 1)
 
-        # Detect hand — index fingertip (8) and thumb tip (4)
         fx, fy   = -1, -1
         pinching = False
+        thumbs_up_col = False
         rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_img   = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        result   = detector.detect(mp_img)
+        result   = detector.detect_for_video(mp_img, int(time.time() * 1000))
         if result.hand_landmarks:
             lm   = result.hand_landmarks[0]
             fx   = int(lm[8].x * W)
@@ -687,19 +776,34 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
             tx   = int(lm[4].x * W)
             ty   = int(lm[4].y * H)
 
-            # Pinch = distance between index tip and thumb tip < threshold
             pinch_dist = math.hypot(fx - tx, fy - ty)
-            PINCH_THRESH = 40   # pixels
+            PINCH_THRESH = 60
             pinching = pinch_dist < PINCH_THRESH
 
-            # Draw index tip
+            thumb_up_col  = lm[4].y  < lm[2].y
+            index_dn_col  = lm[8].y  > lm[6].y
+            middle_dn_col = lm[12].y > lm[10].y
+            ring_dn_col   = lm[16].y > lm[14].y
+            pinky_dn_col  = lm[20].y > lm[18].y
+            thumbs_up_col = (thumb_up_col and index_dn_col and middle_dn_col
+                             and ring_dn_col and pinky_dn_col)
+
+            CONN3 = [(0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),(5,9),(9,10),
+                     (10,11),(11,12),(9,13),(13,14),(14,15),(15,16),(13,17),(17,18),
+                     (18,19),(19,20),(0,17)]
+            skel3_pts = [(int(lm[i].x*W), int(lm[i].y*H)) for i in range(21)]
+            skel3_col = (0, 255, 80)   if thumbs_up_col else (80, 220, 80)
+            dot3_col  = (0, 255, 80)   if thumbs_up_col else (200, 255, 200)
+            for a, b in CONN3:
+                cv2.line(display, skel3_pts[a], skel3_pts[b], skel3_col, 2)
+            for p in skel3_pts:
+                cv2.circle(display, p, 4, dot3_col, -1)
+
             dot_col = (0,255,100) if pinching else (0,255,255)
             cv2.circle(display, (fx, fy), 14, dot_col, -1)
             cv2.circle(display, (fx, fy), 14, (255,255,255), 2)
-            # Draw thumb tip
             cv2.circle(display, (tx, ty), 10, dot_col, -1)
             cv2.circle(display, (tx, ty), 10, (255,255,255), 2)
-            # Line between them showing pinch distance
             cv2.line(display, (fx,fy), (tx,ty), dot_col, 2)
 
         # Find which swatch finger is over
@@ -725,22 +829,65 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
             hover_idx    = this_hover
             hover_frames = 0
 
-        if hover_frames >= 8:
-            chosen_color = PALETTE[hover_idx][0]
-
-            # Fill guide thumbnail for confirmation
+        if hover_frames >= 8 and selected_color is None:
+            selected_color = PALETTE[hover_idx][0]
             filled_guide = guide_full.copy()
-            cv2.fillPoly(filled_guide, [np.array(dot_px, np.int32)], chosen_color)
+            shape_mask_full = np.zeros((H, W), dtype=np.uint8)
+            cv2.fillPoly(shape_mask_full, [np.array(dot_px, np.int32)], 255)
+            filled_guide[shape_mask_full == 255] = selected_color
             cv2.polylines(filled_guide, [np.array(dot_px, np.int32)], closed, (255,255,255), 2, cv2.LINE_AA)
             filled_thumb = cv2.resize(filled_guide, (gw, gh))
-            gx, gy = W - gw - 20, 80
-            display[gy:gy+gh, gx:gx+gw] = filled_thumb
-            cv2.rectangle(display, (gx-2, gy-2), (gx+gw+2, gy+gh+2), chosen_color, 3)
-            cv2.imshow("DrawBook", display)
-            cv2.waitKey(400)
+            hover_frames = 0
+            hover_idx    = -1
 
-            detector.close()
-            return chosen_color, time.time() - start_t
+        if selected_color is not None:
+            if thumbs_up_col:
+                done_col_frames += 1
+                done_col_missing = 0
+            else:
+                done_col_missing += 1
+                if done_col_missing > 4:
+                    done_col_frames = 0
+                    done_col_missing = 0
+
+            # Draw done coloring button
+            DONE_COL_NEEDED = 18
+            bw2, bh2 = 280, 55
+            bx2 = W//2 - bw2//2
+            by2 = H - 90
+            cv2.rectangle(display, (bx2, by2), (bx2+bw2, by2+bh2), (0,160,0), -1)
+            cv2.rectangle(display, (bx2, by2), (bx2+bw2, by2+bh2), (0,255,0), 3)
+            if done_col_frames > 0:
+                prog = min(done_col_frames / DONE_COL_NEEDED, 1.0)
+                cv2.rectangle(display, (bx2, by2), (bx2 + int(bw2*prog), by2+bh2), (0,255,120), -1)
+            lbl2 = "👍 Done Coloring"
+            (tw2, th2), _ = cv2.getTextSize(lbl2, cv2.FONT_HERSHEY_SIMPLEX, 0.75, 2)
+            cv2.putText(display, lbl2, (bx2 + (bw2-tw2)//2, by2 + (bh2+th2)//2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0,0,0), 4)
+            cv2.putText(display, lbl2, (bx2 + (bw2-tw2)//2, by2 + (bh2+th2)//2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2)
+            cv2.putText(display, "Thumbs Up to confirm!", (W//2-130, by2-12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,215,255), 1)
+
+            if done_col_frames >= DONE_COL_NEEDED:
+                chosen_color = selected_color
+                elapsed_col = time.time() - start_t
+                t_end = time.time() + 1.5
+                while time.time() < t_end:
+                    ret, cf = cap.read()
+                    if not ret: break
+                    cf = cv2.flip(cf, 1)
+                    cd = cf.copy()
+                    cel = np.zeros((H,W,3),dtype=np.uint8)
+                    col_name = next((n for b,n in PALETTE if tuple(b)==tuple(chosen_color)), "Color")
+                    draw_celebration(cel, W, H, time.time(),
+                                     f"{col_name.upper()} — Great pick! 🎨",
+                                     "All steps done — see your score!")
+                    cd = alpha_blend(cd, cel, 0.80)
+                    cv2.imshow("DrawBook", cd)
+                    cv2.waitKey(30)
+                detector.close()
+                return chosen_color, elapsed_col, suggested_bgr
 
         # Draw swatches
         for i, (bgr, name) in enumerate(PALETTE):
@@ -766,10 +913,10 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
             cv2.rectangle(display, (tx2-2, ty2-th-2), (tx2+tw+2, ty2+4), (0,0,0), -1)
             cv2.putText(display, name, (tx2, ty2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
-        # Update title to reflect pinch interaction
-        cv2.putText(display, "Pinch to pick a color!", (W//2-230, 55),
+        # Update title to reflect pinch + thumbs-up interaction
+        cv2.putText(display, "Pinch a color, then 👍 Done!", (W//2-230, 55),
                     cv2.FONT_HERSHEY_DUPLEX, 1.3, (0,0,0), 6)
-        cv2.putText(display, "Pinch to pick a color!", (W//2-230, 55),
+        cv2.putText(display, "Pinch a color, then 👍 Done!", (W//2-230, 55),
                     cv2.FONT_HERSHEY_DUPLEX, 1.3, (255,160,0), 3)
 
         cv2.putText(display, "ESC to quit", (20, H-20),
@@ -777,7 +924,7 @@ def coloring_step(item_name, W, H, cap, dot_px, closed, guide_color):
         cv2.imshow("DrawBook", display)
         if cv2.waitKey(1) & 0xFF == 27:
             detector.close()
-            return None, 0
+            return None, 0, None
 
 
 def write_completion_signal(item_name, category, pts_earned,
@@ -821,9 +968,9 @@ def main():
         base_options=base_opts,
         running_mode=mp_vision.RunningMode.VIDEO,
         num_hands=1,
-        min_hand_detection_confidence=0.55,
-        min_hand_presence_confidence=0.55,
-        min_tracking_confidence=0.5,
+        min_hand_detection_confidence=0.7,
+        min_hand_presence_confidence=0.7,
+        min_tracking_confidence=0.65,
     )
     landmarker = mp_vision.HandLandmarker.create_from_options(opts)
 
@@ -862,14 +1009,15 @@ def main():
     next_dot        = 0
     last_pt         = None
     all_done        = False
-    shape_filled    = False
+    done_hover_frames = 0
+    done_trace_missing = 0
     celebrating     = False
     celebrate_start = 0.0
     pulse           = 0.0
     ts_ms           = 0
     cur_mode        = 'idle'
     pts_so_far      = 0
-    step            = 1                                     
+    step            = 1
 
             
     trace_start = time.time()
@@ -887,14 +1035,12 @@ def main():
         if not ret: break
         frame = cv2.flip(frame, 1)
         fh, fw = frame.shape[:2]
-        ts_ms += 33
+        ts_ms  = int(time.time() * 1000)
         pulse  = time.time() * 4.0
 
                                                                 
         if step == 4:
-            panel = frame.copy()
-            cv2.rectangle(panel,(0,0),(W,H),(0,0,0),-1)
-            display = cv2.addWeighted(frame, 0.2, panel, 0.8, 0)
+            display = frame.copy()
             draw_celebration(display, W, H, time.time(),
                              "CONGRATULATIONS!",
                              f"You completed {item_name.capitalize()}! +30 pts")
@@ -931,10 +1077,10 @@ def main():
 
         if det.hand_landmarks:
             lms = det.hand_landmarks[0]
-            draw_skeleton(frame, lms, fw, fh)
+            draw_skeleton(frame, lms, W, H)
             up = fingers_up(lms)
             _, index, middle, ring, pinky = up
-            tip_px = (int(lms[8].x*fw), int(lms[8].y*fh))
+            tip_px = (int(lms[8].x*W), int(lms[8].y*H))
             if index and not middle and not ring and not pinky:
                 cur_mode = 'draw'
             elif index and middle and not ring and not pinky:
@@ -975,7 +1121,8 @@ def main():
             draw_dots(dot_overlay, dot_px, visited, next_dot, pulse, all_done)
             display = alpha_blend(display, dot_overlay, 1.0)
             hud = np.zeros((H,W,3),dtype=np.uint8)
-            draw_hud(hud, item_name, level, len(visited), N, W, H, cur_mode, step, pts_so_far)
+            draw_hud(hud, item_name, level, len(visited), N, W, H, cur_mode, step, pts_so_far,
+                     all_done=all_done, done_hover_frames=done_hover_frames)
             display = alpha_blend(display, hud, 0.90)
 
             if tip_px:
@@ -984,10 +1131,32 @@ def main():
                 cv2.circle(display, tip_px, 13, cc, 2)
                 cv2.circle(display, tip_px,  4, cc, -1)
 
+                if all_done and det.hand_landmarks:
+                    lms_t = det.hand_landmarks[0]
+                    thumb_up  = lms_t[4].y  < lms_t[2].y
+                    index_dn  = lms_t[8].y  > lms_t[6].y
+                    middle_dn = lms_t[12].y > lms_t[10].y
+                    ring_dn   = lms_t[16].y > lms_t[14].y
+                    pinky_dn  = lms_t[20].y > lms_t[18].y
+                    is_thumbs_up = thumb_up and index_dn and middle_dn and ring_dn and pinky_dn
+                    if is_thumbs_up:
+                        done_hover_frames += 1
+                        done_trace_missing = 0
+                    else:
+                        done_trace_missing += 1
+                        if done_trace_missing > 4:
+                            done_hover_frames = 0
+                            done_trace_missing = 0
+                elif all_done and not det.hand_landmarks:
+                    done_trace_missing += 1
+                    if done_trace_missing > 4:
+                        done_hover_frames = 0
+                        done_trace_missing = 0
+
             if celebrating:
                 celeb = np.zeros((H,W,3),dtype=np.uint8)
                 draw_celebration(celeb, W, H, time.time(),
-                                 "TRACED! +10 pts 🎉","Press ENTER for Step 2!")
+                                 "TRACED! +10 pts 🎉","👍 Thumbs Up to continue!")
                 display = alpha_blend(display, celeb, 0.80)
 
             cv2.imshow(WIN, display)
@@ -996,14 +1165,28 @@ def main():
             elif key == ord('r'):
                 draw_layer[:]=0; colour_layer[:]=0
                 visited.clear(); next_dot=0; last_pt=None
-                all_done=False; celebrating=False
+                all_done=False; celebrating=False; done_hover_frames=0; done_trace_missing=0
                 trace_start=time.time(); pts_so_far=max(0,pts_so_far-10)
             elif key == ord('s'):
                 fname=f"{item_name}_trace.png"; cv2.imwrite(fname,display)
                 screenshot_taken=True; print(f"💾 {fname}")
-            elif key == 13 and all_done:
+            elif (done_hover_frames >= 18) and all_done:
                 celebrating = False
                 step = 2
+
+                # Show step 1 celebration for 1.5s (not counted in time)
+                t_end = time.time() + 1.5
+                while time.time() < t_end:
+                    ret, cf = cap.read()
+                    if not ret: break
+                    cf = cv2.flip(cf, 1)
+                    cd = cf.copy()
+                    cel = np.zeros((H,W,3),dtype=np.uint8)
+                    draw_celebration(cel, W, H, time.time(),
+                                     "WELL DONE! +10 pts 🎉", "Moving to Step 2 — Name it!")
+                    cd = alpha_blend(cd, cel, 0.80)
+                    cv2.imshow(WIN, cd)
+                    cv2.waitKey(30)
                                                     
                 t_name = naming_step(item_name, W, H, cap)
                 if t_name is None: break
@@ -1014,13 +1197,11 @@ def main():
 
                                                                 
         elif step == 3:
-            chosen_color, t_col = coloring_step(
+            chosen_color, t_col, suggested_bgr = coloring_step(
                 item_name, W, H, cap, dot_px, closed, guide_color)
             if chosen_color is None: break
             time_color  = t_col
-            pal_bgrs = [bgr for bgr, _ in PALETTE]
-            suggested_in_palette = any(tuple(bgr) == tuple(guide_color) for bgr in pal_bgrs)
-            if not suggested_in_palette or tuple(chosen_color) == tuple(guide_color):
+            if tuple(chosen_color) == tuple(suggested_bgr):
                 pts_so_far += 10
                 print(f"✅ Correct color! +10 pts | Time: {time_color:.1f}s")
             else:

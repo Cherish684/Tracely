@@ -624,6 +624,8 @@ async function startMobileDrawing(item) {
   mobileAnimProgress = 0;
   colorHoverHex     = null;
   colorHoverFrames  = 0;
+  window._dtHoverFrames = 0;
+  window._dcHoverFrames = 0;
 
   const modal = document.getElementById('mobile-draw-modal');
   modal.style.display = 'flex';
@@ -635,9 +637,9 @@ async function startMobileDrawing(item) {
     dtBtn = document.createElement('button');
     dtBtn.id = 'done-tracing-camera-btn';
     dtBtn.className = 'voice-name-btn';
-    dtBtn.style.cssText = 'position:absolute;bottom:70px;left:50%;transform:translateX(-50%);z-index:20;display:none;';
+    dtBtn.style.cssText = 'position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:20;display:none;padding:20px 48px;font-size:1.25rem;border-radius:18px;min-width:220px;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.8);color:#fff;';
     dtBtn.textContent = '✅ Done Tracing!';
-    dtBtn.onclick = finishTrace;
+    dtBtn.addEventListener('touchstart', e => { e.preventDefault(); finishTrace(); }, { passive: false });
     document.getElementById('mobile-canvas-wrap').appendChild(dtBtn);
   }
   showMobileStep(1);
@@ -704,6 +706,59 @@ function hideMobileLoading() {
 }
 
 let lastGestureTime = 0;
+
+// ── Hand skeleton renderer — draws bones + joints for all steps ───────────────
+function drawHandSkeleton(ctx, lm, cw, ch) {
+  if (!lm) return;
+  // All 21 MediaPipe hand connections
+  const CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],         // thumb
+    [0,5],[5,6],[6,7],[7,8],         // index finger
+    [0,9],[9,10],[10,11],[11,12],    // middle finger
+    [0,13],[13,14],[14,15],[15,16],  // ring finger
+    [0,17],[17,18],[18,19],[19,20],  // pinky
+    [5,9],[9,13],[13,17]             // palm cross-connections
+  ];
+
+  ctx.save();
+
+  // Draw bones (lines between landmarks)
+  ctx.strokeStyle = 'rgba(0,220,255,0.55)';
+  ctx.lineWidth   = 2;
+  ctx.lineCap     = 'round';
+  CONNECTIONS.forEach(([a, b]) => {
+    const ax = (1 - lm[a].x) * cw, ay = lm[a].y * ch;
+    const bx = (1 - lm[b].x) * cw, by = lm[b].y * ch;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+  });
+
+  // Draw joint dots
+  lm.forEach((pt, i) => {
+    const x = (1 - pt.x) * cw;
+    const y = pt.y * ch;
+    // Fingertips (4,8,12,16,20) slightly larger; wrist (0) largest
+    const r = i === 0 ? 6 : [4,8,12,16,20].includes(i) ? 5 : 3.5;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    // Colour-code: wrist=orange, fingertips=yellow, knuckles=white
+    ctx.fillStyle = i === 0
+      ? 'rgba(255,140,0,0.85)'
+      : [4,8,12,16,20].includes(i)
+        ? 'rgba(255,240,50,0.9)'
+        : 'rgba(255,255,255,0.75)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth   = 1;
+    ctx.stroke();
+  });
+
+  ctx.restore();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function onHandResults(results) {
   if (mobileStep!==1 && mobileStep!==3) return;
   const canvas = document.getElementById('mobile-canvas');
@@ -721,11 +776,12 @@ function onHandResults(results) {
 
   if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
     document.getElementById('gesture-label').textContent = '✋ Show your hand';
-    // In step 3 (color), keep drawing the swatches even without a hand so the
-    // UI doesn't blank out and appear to revert to a previous step.
     if (mobileStep === 3) {
-      drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, -999, -999, null, canvas.width, canvas.height);
+      drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, -999, -999, null);
     }
+    // Decay hover frames when hand not visible
+    window._dtHoverFrames = Math.max(0, (window._dtHoverFrames || 0) - 2);
+    window._dcHoverFrames = Math.max(0, (window._dcHoverFrames || 0) - 2);
     return;
   }
 
@@ -737,6 +793,9 @@ function onHandResults(results) {
   const tx = (1-lm[8].x) * canvas.width;
   const ty = lm[8].y     * canvas.height;
 
+  // Draw hand skeleton over camera feed, under all UI elements
+  drawHandSkeleton(ctx, lm, canvas.width, canvas.height);
+
   if (gesture==='DRAWING') {
     mobileDrawing = true;
     mobileDrawnPts.push({x: tx, y: ty});
@@ -747,8 +806,85 @@ function onHandResults(results) {
     // advance only via Done Tracing button
   }
 
+  // ── THUMBS_UP dwell over Done Tracing button (Step 1 only) ─────────────────
+  if (mobileStep === 1 && gesture === 'THUMBS_UP') {
+    const dtBtn = document.getElementById('done-tracing-camera-btn');
+    if (dtBtn && dtBtn.style.display !== 'none') {
+      const wrap  = document.getElementById('mobile-canvas-wrap');
+      const wRect = wrap.getBoundingClientRect();
+      const bRect = dtBtn.getBoundingClientRect();
+      const scaleX = canvas.width  / wRect.width;
+      const scaleY = canvas.height / wRect.height;
+      const bx1 = (bRect.left - wRect.left) * scaleX;
+      const by1 = (bRect.top  - wRect.top)  * scaleY;
+      const bx2 = bx1 + bRect.width  * scaleX;
+      const by2 = by1 + bRect.height * scaleY;
+      if (!window._dtHoverFrames) window._dtHoverFrames = 0;
+      window._dtHoverFrames++;
+      const prog = Math.min(window._dtHoverFrames / 24, 1);
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,230,120,0.5)';
+      ctx.fillRect(bx1, by1, (bx2 - bx1) * prog, by2 - by1);
+      ctx.strokeStyle = '#0f0';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(bx1, by1, bx2 - bx1, by2 - by1);
+      ctx.restore();
+      if (window._dtHoverFrames >= 24) {
+        window._dtHoverFrames = 0;
+        finishTrace();
+      }
+    }
+  } else if (mobileStep === 1) {
+    // Decay instead of instant reset — prevents flicker from brief gesture misreads
+    window._dtHoverFrames = Math.max(0, (window._dtHoverFrames || 0) - 2);
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   if (mobileStep===3) {
-    drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, tx, ty, lm, canvas.width, canvas.height);
+    drawColorSwatchesOnCanvas(ctx, canvas.width, canvas.height, tx, ty, lm);
+
+    // Blue pointer on thumb tip
+    const thumbX = (1 - lm[4].x) * canvas.width;
+    const thumbY = lm[4].y * canvas.height;
+    ctx.beginPath();
+    ctx.arc(thumbX, thumbY, 10, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(30,144,255,0.85)';
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.fill(); ctx.stroke();
+
+    // ── THUMBS_UP dwell for Done Coloring button (Step 3) ──────────────────
+    if (gesture === 'THUMBS_UP') {
+      const dcBtn = document.getElementById('done-coloring-overlay-btn');
+      if (dcBtn && dcBtn.style.display !== 'none') {
+        const wrap  = document.getElementById('mobile-canvas-wrap');
+        const wRect = wrap.getBoundingClientRect();
+        const bRect = dcBtn.getBoundingClientRect();
+        const scaleX = canvas.width  / wRect.width;
+        const scaleY = canvas.height / wRect.height;
+        const bx1 = (bRect.left - wRect.left) * scaleX;
+        const by1 = (bRect.top  - wRect.top)  * scaleY;
+        const bx2 = bx1 + bRect.width  * scaleX;
+        const by2 = by1 + bRect.height * scaleY;
+        if (!window._dcHoverFrames) window._dcHoverFrames = 0;
+        window._dcHoverFrames++;
+        const prog = Math.min(window._dcHoverFrames / 24, 1);
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,230,120,0.5)';
+        ctx.fillRect(bx1, by1, (bx2 - bx1) * prog, by2 - by1);
+        ctx.strokeStyle = '#0f0';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(bx1, by1, bx2 - bx1, by2 - by1);
+        ctx.restore();
+        if (window._dcHoverFrames >= 24) {
+          window._dcHoverFrames = 0;
+          finishColor();
+        }
+      }
+    } else {
+      // Decay instead of instant reset — prevents flicker
+      window._dcHoverFrames = Math.max(0, (window._dcHoverFrames || 0) - 2);
+    }
+    // ────────────────────────────────────────────────────────────────────────
   } else {
     drawCompletedLines(ctx, canvas.width, canvas.height);
   }
@@ -930,8 +1066,13 @@ function detectGesture(lm) {
   const pinkyDown= lm[20].y > lm[18].y;
   const thumbOut = lm[4].x  < lm[3].x;  
 
+  // Thumbs up: thumb tip above its base AND above the knuckle line, all fingers folded
+  const thumbTipUp = lm[4].y < lm[3].y && lm[4].y < lm[9].y;
+  const fingersFolded = !indexUp && !middleUp && ringDown && pinkyDown;
+
   if (indexUp && !middleUp && ringDown && pinkyDown) return 'DRAWING';
   if (indexUp && middleUp && !ringDown)               return 'PEACE';
+  if (fingersFolded && thumbTipUp)                    return 'THUMBS_UP';
   if (!indexUp && !middleUp && thumbOut)              return 'THUMBS_UP';
   if (!indexUp && !middleUp && !thumbOut)             return 'FIST';
 
@@ -1056,17 +1197,22 @@ function animateTouchGuide() {
 }
 
 function finishTrace() {
-  if (mobileDrawnPts.length < 5) {
-    showToast('Try drawing the shape first! ✏️');
+  const dots = getMobileGuideDots(mobileItem);
+  const minDots = Math.max(3, Math.floor(dots.length * 0.5));
+  if (mobileCurrentDot < minDots) {
+    showToast(`Keep tracing! Reach at least ${minDots} dots first ✏️`);
     return;
   }
+  window._dtHoverFrames = 0;
   mobileStepTimes.trace = (performance.now()-mobileStepStart)/1000;
   const score = scoreTrace();
   mobilePtsEarned += 10;
   document.getElementById('mhud-pts').textContent = `+${mobilePtsEarned}/30 pts`;
-  showToast(`✏️ Trace score: ${score}% — Moving to name step!`);
-  mobileStep = 2;
-  showMobileStep(2);
+  // Show celebration overlay for 1.5s (time already captured above)
+  showStepCelebration('✏️ Great Tracing! +10 pts 🎉', `Score: ${score}% — Moving to Step 2!`, () => {
+    mobileStep = 2;
+    showMobileStep(2);
+  });
 }
 
 function showMobileStep(step) {
@@ -1077,6 +1223,8 @@ function showMobileStep(step) {
   document.getElementById('mobile-canvas-wrap').style.display='none';
   const dtBtn = document.getElementById('done-tracing-camera-btn');
   if (dtBtn) dtBtn.style.display = 'none';
+  const dcBtn = document.getElementById('done-coloring-overlay-btn');
+  if (dcBtn) dcBtn.style.display = 'none';
 
   const overlay = document.getElementById('step-overlay');
   overlay.style.display='none';
@@ -1084,17 +1232,12 @@ function showMobileStep(step) {
   if (step===1) {
     document.getElementById('mobile-canvas-wrap').style.display='block';
     if (dtBtn && !mobileTouchFallback) dtBtn.style.display='block';
-    overlay.innerHTML = `<div class="step-intro"><div class="step-num">Step 1 of 3</div>
-      <div class="step-title">✏️ Trace the ${mobileItem.name}</div>
-      <div class="step-tip">${isMobile()&&!mobileTouchFallback?'☝️ Raise index finger to draw<br>👍 Thumbs up to finish':'👆 Draw with your finger then tap Done'}</div>
-      <button class="step-dismiss-btn" onclick="document.getElementById('step-overlay').style.display='none'">Let's go! →</button>
-    </div>`;
-    overlay.style.display='flex';
+    overlay.style.display='none';
   } else if (step===2) {
     overlay.style.display='none';
     document.getElementById('mobile-canvas-wrap').style.display='none';
     document.getElementById('mobile-name-step').style.display='flex';
-    document.getElementById('name-result').textContent='';
+    document.getElementById('name-result') && (document.getElementById('name-result').textContent='');
     buildHoverKeyboard();
   } else if (step===3) {
     overlay.style.display='none';
@@ -1128,7 +1271,8 @@ let kbHoverFrames = 0;
 const KB_ROWS     = [
   ['Q','W','E','R','T','Y','U','I','O','P'],
   ['A','S','D','F','G','H','J','K','L'],
-  ['Z','X','C','V','B','N','M','<','OK']
+  ['Z','X','C','V','B','N','M','<'],
+  ['OK']
 ];
 const KB_NEEDED   = 18;
 
@@ -1139,43 +1283,44 @@ function buildHoverKeyboard() {
 
   const ns = document.getElementById('mobile-name-step');
   ns.innerHTML = '';
-  ns.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:flex-start;width:100%;height:100%;padding:10px 4px;box-sizing:border-box;background:rgba(0,0,0,0.85);';
+  ns.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:flex-start;width:100%;height:100%;padding:0;box-sizing:border-box;background:transparent;position:relative;overflow:hidden;';
 
-  // Title
+  // Full-screen canvas as background (camera feed + keyboard drawn here)
+  const canvas = document.createElement('canvas');
+  canvas.id = 'kb-canvas';
+  canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none;';
+  ns.appendChild(canvas);
+
+  // UI overlay on top of canvas
+  const uiWrap = document.createElement('div');
+  uiWrap.style.cssText = 'position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;width:100%;padding:10px 4px;box-sizing:border-box;pointer-events:none;';
+  ns.appendChild(uiWrap);
+
   const title = document.createElement('div');
   title.style.cssText = 'color:#0ef;font-size:1.1rem;font-weight:800;margin-bottom:6px;';
-  title.textContent   = '✋ Hover finger to spell the name!';
-  ns.appendChild(title);
+  title.textContent   = '☝️ Point finger to spell the name!';
+  uiWrap.appendChild(title);
 
-  // Typed text box
   const box = document.createElement('div');
   box.id = 'kb-typed-box';
-  box.style.cssText = 'background:#23273a;border:2px solid #fff;border-radius:10px;padding:8px 14px;font-size:1.3rem;font-weight:800;color:#fff;min-width:220px;text-align:center;margin-bottom:8px;letter-spacing:3px;';
+  box.style.cssText = 'background:rgba(35,39,58,0.85);border:2px solid #fff;border-radius:10px;padding:8px 14px;font-size:1.3rem;font-weight:800;color:#fff;min-width:220px;text-align:center;margin-bottom:8px;letter-spacing:3px;';
   box.textContent = '_';
-  ns.appendChild(box);
+  uiWrap.appendChild(box);
 
-  // Result feedback
   const res = document.createElement('div');
   res.id = 'name-result';
   res.style.cssText = 'font-size:.85rem;font-weight:700;min-height:22px;margin-bottom:6px;';
-  ns.appendChild(res);
+  uiWrap.appendChild(res);
 
-  // Canvas keyboard
-  const canvas = document.createElement('canvas');
-  canvas.id = 'kb-canvas';
-  canvas.style.cssText = 'width:100%;max-width:420px;touch-action:none;border-radius:8px;';
-  ns.appendChild(canvas);
-
-  // Fallback touch buttons
+  // Touch fallback buttons
   const touchWrap = document.createElement('div');
   touchWrap.id = 'kb-touch-wrap';
-  touchWrap.style.cssText = 'display:none;flex-direction:column;align-items:center;gap:4px;width:100%;max-width:420px;margin-top:4px;';
+  touchWrap.style.cssText = 'display:none;flex-direction:column;align-items:center;gap:4px;width:100%;max-width:420px;margin-top:4px;pointer-events:all;';
   KB_ROWS.forEach(row => {
     const rowDiv = document.createElement('div');
     rowDiv.style.cssText = 'display:flex;gap:4px;justify-content:center;';
     row.forEach(k => {
       const btn = document.createElement('button');
-      btn.dataset.key = k;
       btn.style.cssText = `padding:8px ${k==='OK'?'12px':'6px'};min-width:${k==='OK'?'44px':'32px'};border:1.5px solid #555;border-radius:7px;background:${k==='OK'?'#0a0':'#23273a'};color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;font-family:inherit;`;
       btn.textContent = k === '<' ? '⌫' : k;
       btn.onclick = () => handleKbKey(k);
@@ -1183,15 +1328,13 @@ function buildHoverKeyboard() {
     });
     touchWrap.appendChild(rowDiv);
   });
-  ns.appendChild(touchWrap);
+  uiWrap.appendChild(touchWrap);
 
-  // If touch fallback, show buttons instead of canvas
   if (mobileTouchFallback) {
     canvas.style.display = 'none';
     touchWrap.style.display = 'flex';
   } else {
-    drawKbCanvas(null, -999, -999);
-    // Camera hover loop
+    drawKbCanvas(null, -999, -999, null);
     startKbCameraLoop();
   }
 }
@@ -1199,9 +1342,7 @@ function buildHoverKeyboard() {
 let kbCameraActive = false;
 function startKbCameraLoop() {
   kbCameraActive = true;
-  if (!mobileHands) return;
-  // reuse existing mediapipe — override onResults temporarily
-  mobileHands.onResults(onKbHandResults);
+  if (mobileHands) mobileHands.onResults(onKbHandResults);
 }
 function stopKbCameraLoop() {
   kbCameraActive = false;
@@ -1214,88 +1355,144 @@ function onKbHandResults(results) {
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
   canvas.width  = rect.width  || 360;
-  canvas.height = rect.height || 220;
+  canvas.height = rect.height || 480;
 
-  let fx = -999, fy = -999;
+  const ctx   = canvas.getContext('2d');
+  const video = document.getElementById('mobile-video');
+
+  // Draw mirrored camera feed as background (same as step 1 & 3)
+  ctx.save();
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  let fx = -999, fy = -999, lmData = null;
   if (results.multiHandLandmarks && results.multiHandLandmarks.length) {
     const lm = results.multiHandLandmarks[0];
-    // mirror x like onHandResults
-    const video = document.getElementById('mobile-video');
+    lmData = lm;
     const vw = video.videoWidth  || 640;
     const vh = video.videoHeight || 480;
-    const rawX = (1 - lm[8].x) * vw;
-    const rawY = lm[8].y       * vh;
-    // map from video coords to canvas coords
-    fx = (rawX / vw) * canvas.width;
-    fy = (rawY / vh) * canvas.height;
+    fx = ((1 - lm[8].x) * vw / vw) * canvas.width;
+    fy = (lm[8].y * vh / vh) * canvas.height;
+    // Draw hand skeleton over camera feed for step 2
+    drawHandSkeleton(ctx, lm, canvas.width, canvas.height);
   }
-  drawKbCanvas(null, fx, fy);
+  drawKbCanvas(ctx, fx, fy, lmData);
 }
 
-function drawKbCanvas(ctx, fx, fy) {
+function drawKbCanvas(ctx, fx, fy, lm) {
   const canvas = document.getElementById('kb-canvas');
   if (!canvas) return;
   if (!ctx) ctx = canvas.getContext('2d');
   const cw = canvas.width  || 360;
   const ch = canvas.height || 220;
 
-  const KEY_W  = Math.floor(cw / 11);
-  const KEY_H  = Math.floor(ch / 4.5);
-  const GAP    = 3;
+  const KEY_W = Math.floor(cw / 11);
+  const KEY_H = Math.floor((ch * 0.45) / 4.5);
+  const GAP   = 3;
+  const kbOffsetY = Math.floor(ch * 0.38); // keyboard starts at 38% down (shifted up)
 
-  ctx.clearRect(0, 0, cw, ch);
+  // Only allow hover when index finger is up
+  let indexUp = true;
+  let thumbsUp = false;
+  if (lm) {
+    indexUp  = lm[8].y < lm[6].y && lm[12].y > lm[10].y;
+    thumbsUp = !indexUp && lm[4].x < lm[3].x && lm[12].y > lm[10].y && lm[16].y > lm[14].y && lm[20].y > lm[18].y;
+  }
+
+  // No dark overlay — full camera brightness
 
   let hitKey = null;
   KB_ROWS.forEach((row, ri) => {
-    const rowW   = row.length * (KEY_W + GAP) - GAP;
-    const startX = (cw - rowW) / 2;
-    row.forEach((k, ci) => {
-      const x1 = startX + ci * (KEY_W + GAP);
-      const y1 = ri * (KEY_H + GAP) + GAP;
-      const x2 = x1 + KEY_W;
+    // OK row: single wide centered button
+    if (row.length === 1 && row[0] === 'OK') {
+      const okW = Math.floor(cw * 0.55);
+      const okH = Math.floor(KEY_H * 1.3);
+      const x1  = Math.floor((cw - okW) / 2);
+      const y1  = kbOffsetY + ri * (KEY_H + GAP) + GAP;
+      const x2  = x1 + okW;
+      const y2  = y1 + okH;
+      const cx  = x1 + okW / 2;
+      const cy  = y1 + okH / 2;
+      const hovered = thumbsUp;
+      if (hovered) hitKey = 'OK';
+
+      ctx.fillStyle = hovered ? '#0d0' : '#0a5';
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(x1, y1, okW, okH, 10) : ctx.rect(x1, y1, okW, okH);
+      ctx.fill();
+      ctx.strokeStyle = hovered ? '#0ef' : '#0f0';
+      ctx.lineWidth = hovered ? 3 : 2;
+      ctx.stroke();
+
+      if (hovered && kbHoverKey === 'OK' && kbHoverFrames > 0) {
+        const prog = Math.min(kbHoverFrames / KB_NEEDED, 1);
+        ctx.fillStyle = 'rgba(0,230,255,0.35)';
+        ctx.fillRect(x1, y2 - okH * prog, okW, okH * prog);
+      }
+
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.round(okH * 0.45)}px Nunito,sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('✅ OK', cx, cy);
+      return;
+    }
+
+    const rowW   = row.reduce((s, k) => s + (k === '<' ? KEY_W * 2 : KEY_W) + GAP, -GAP);
+    let xCursor  = Math.floor((cw - rowW) / 2);
+    row.forEach(k => {
+      const kw = k === '<' ? KEY_W * 2 : KEY_W;
+      const x1 = xCursor;
+      const y1 = kbOffsetY + ri * (KEY_H + GAP) + GAP;
+      const x2 = x1 + kw;
       const y2 = y1 + KEY_H;
-      const cx = x1 + KEY_W/2;
-      const cy = y1 + KEY_H/2;
-      const hovered = fx >= x1 && fx <= x2 && fy >= y1 && fy <= y2;
+      const cx = x1 + kw / 2;
+      const cy = y1 + KEY_H / 2;
+      xCursor  += kw + GAP;
+      const hovered = indexUp && fx >= x1 && fx <= x2 && fy >= y1 && fy <= y2;
       if (hovered) hitKey = k;
 
-      // Background
-      ctx.fillStyle = k==='OK' ? '#0a5' : k==='<' ? '#044' : hovered ? '#444' : '#222';
+      ctx.fillStyle = k === '<' ? '#044' : hovered ? '#444' : 'rgba(20,20,40,0.92)';
       ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(x1,y1,KEY_W,KEY_H,5) : ctx.rect(x1,y1,KEY_W,KEY_H);
+      ctx.roundRect ? ctx.roundRect(x1, y1, kw, KEY_H, 5) : ctx.rect(x1, y1, kw, KEY_H);
       ctx.fill();
       ctx.strokeStyle = hovered ? '#0ef' : '#555';
       ctx.lineWidth   = hovered ? 2 : 1;
       ctx.stroke();
 
-      // Progress fill
-      if (hovered && kbHoverKey===k && kbHoverFrames>0) {
-        const prog = Math.min(kbHoverFrames/KB_NEEDED,1);
+      if (hovered && kbHoverKey === k && kbHoverFrames > 0) {
+        const prog = Math.min(kbHoverFrames / KB_NEEDED, 1);
         ctx.fillStyle = 'rgba(0,230,255,0.35)';
-        ctx.fillRect(x1, y2 - KEY_H*prog, KEY_W, KEY_H*prog);
+        ctx.fillRect(x1, y2 - KEY_H * prog, kw, KEY_H * prog);
       }
 
-      // Label
       ctx.fillStyle = '#fff';
-      ctx.font = `bold ${Math.round(KEY_H*0.38)}px Nunito,sans-serif`;
+      ctx.font = `bold ${Math.round(KEY_H * 0.38)}px Nunito,sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(k==='<'?'⌫':k, cx, cy);
+      ctx.fillText(k === '<' ? '⌫' : k, cx, cy);
     });
   });
 
-  // Finger dot
   if (fx > 0 && fy > 0) {
     ctx.beginPath();
     ctx.arc(fx, fy, 10, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(0,230,255,0.8)';
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
+    ctx.fillStyle = indexUp ? 'rgba(0,230,255,0.8)' : 'rgba(150,150,150,0.5)';
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.fill(); ctx.stroke();
   }
 
-  // Update hover state
-  if (hitKey && hitKey === kbHoverKey) {
+  if (lm && !indexUp && !thumbsUp) {
+    ctx.fillStyle = 'rgba(255,160,0,0.9)';
+    ctx.font = 'bold 12px Nunito,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('☝ Raise index finger to type / 👍 Thumbs up for OK', cw/2, ch - 6);
+  }
+
+  const activeGesture = thumbsUp || indexUp;
+  if (activeGesture && hitKey && hitKey === kbHoverKey) {
     kbHoverFrames++;
     if (kbHoverFrames >= KB_NEEDED) {
       handleKbKey(hitKey);
@@ -1303,8 +1500,8 @@ function drawKbCanvas(ctx, fx, fy) {
       kbHoverKey    = null;
     }
   } else {
-    kbHoverKey    = hitKey;
-    kbHoverFrames = hitKey ? 1 : 0;
+    kbHoverKey    = activeGesture ? hitKey : null;
+    kbHoverFrames = (activeGesture && hitKey) ? 1 : 0;
   }
 }
 
@@ -1321,9 +1518,10 @@ function handleKbKey(k) {
       res.style.color = '#4caf50';
       mobilePtsEarned += 10; mobileNameCorrect = true;
       stopKbCameraLoop();
-      setTimeout(goToColorStep, 1200);
+      mobileStepTimes.name = (performance.now()-mobileStepStart)/1000; // capture before celebration
+      showStepCelebration('🗣️ Correct Name! +10 pts 🎉', `"${mobileItem.name}" — Moving to Step 3!`, goToColorStep);
     } else {
-      res.textContent = `🤔 You typed "${kbTyped}" — try again!`;
+      res.textContent = `🤔 Try again!`;
       res.style.color = '#ff9800';
       kbTyped = '';
     }
@@ -1394,7 +1592,7 @@ function checkTypedName() {
   }
 }
 function goToColorStep() {
-  mobileStepTimes.name = (performance.now()-mobileStepStart)/1000;
+  if (!mobileStepTimes.name) mobileStepTimes.name = (performance.now()-mobileStepStart)/1000;
   mobileStep=3;
   showMobileStep(3);
 }
@@ -1419,25 +1617,34 @@ function getClosestColorName(hex) {
 }
 
 function buildPaletteOverlay() {
-  const existing=document.getElementById('done-coloring-overlay-btn');
-  if(!existing){
-    const done=document.createElement('button');
-    done.id='done-coloring-overlay-btn';
-    done.className='voice-name-btn';
-    done.style.cssText='position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:20;';
-    done.textContent='✅ Done Coloring!';
-    done.onclick=finishColor;
+  let done = document.getElementById('done-coloring-overlay-btn');
+  if (!done) {
+    done = document.createElement('button');
+    done.id = 'done-coloring-overlay-btn';
+    done.className = 'voice-name-btn';
+    done.style.cssText = 'position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:20;padding:20px 48px;font-size:1.25rem;border-radius:18px;min-width:220px;display:none;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.8);color:#fff;';
+    done.textContent = '✅ Done Coloring!';
+    done.addEventListener('touchstart', e => { e.preventDefault(); finishColor(); }, { passive: false });
     document.getElementById('mobile-canvas-wrap').appendChild(done);
-  } else { existing.style.display='block'; }
+  }
+  done.style.display = 'block';
 }
 
-function drawColorSwatchesOnCanvas(ctx, cw, ch, tx, ty, lm, canvasW, canvasH) {
+function drawColorSwatchesOnCanvas(ctx, cw, ch, tx, ty, lm) {
   const cols=5, swatch=50, gap=10;
   const totalW=cols*(swatch+gap)-gap;
   const startX=(cw-totalW)/2;
   const rows=Math.ceil(COLORS.length/cols);
   const swatchAreaH=rows*(swatch+gap+18)+10;
   const startY=ch-swatchAreaH-20;
+
+  // Pinch detection
+  let isPinching = false;
+  if (lm) {
+    const thumbX = (1 - lm[4].x) * cw;
+    const thumbY = lm[4].y * ch;
+    isPinching = Math.hypot(tx - thumbX, ty - thumbY) < 40;
+  }
 
   // Draw shape outline only (no fill until color selected)
   if (mobileItem) {
@@ -1456,84 +1663,67 @@ function drawColorSwatchesOnCanvas(ctx, cw, ch, tx, ty, lm, canvasW, canvasH) {
       ctx.beginPath();
       pts.forEach((p,i)=>{const px=p.x*scale+ox,py=p.y*scale+oy;if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);});
       ctx.closePath();
-      ctx.fillStyle=fillColor; ctx.fill();
-      ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=2.5; ctx.stroke();
+      ctx.fillStyle=fillColor;ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.9)';ctx.lineWidth=2.5;ctx.stroke();
     }
   }
 
-  // Detect pinch from landmarks
-  let isPinching = false;
-  if (lm && canvasW && canvasH) {
-    const thumbX = (1 - lm[4].x) * canvasW;
-    const thumbY = lm[4].y * canvasH;
-    const pinchDist = Math.hypot(tx - thumbX, ty - thumbY);
-    isPinching = pinchDist < 40;
-  }
-
-  // Instruction label
+  // Instruction
   ctx.save();
   ctx.fillStyle = isPinching ? 'rgba(0,255,100,0.9)' : 'rgba(255,160,0,0.9)';
   ctx.font = 'bold 15px Nunito,sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(isPinching ? '🤌 Pinching — hold!' : '🤌 Pinch to pick a color!', cw/2, startY - 8);
+  ctx.fillText(isPinching ? '🤌 Pinching!' : '🤌 Pinch to pick a color!', cw/2, startY - 8);
   ctx.restore();
 
-  // Suggested color
+  // Find suggested palette color
   const suggestedHex = mobileItem ? getClosestColorHex(mobileItem.color) : null;
 
   // Draw swatches
   COLORS.forEach((c,i)=>{
-    const col=i%cols, row=Math.floor(i/cols);
+    const col=i%cols,row=Math.floor(i/cols);
     const cx=startX+col*(swatch+gap)+swatch/2;
     const cy=startY+row*(swatch+gap+18)+swatch/2;
-    const hovered = Math.hypot(tx-cx, ty-cy) < swatch/2+10;
+    const hovered=Math.hypot(tx-cx,ty-cy)<swatch/2+10;
 
-    if (hovered && isPinching) {
-      if (colorHoverHex===c.hex) {
+    if(hovered && isPinching){
+      if(colorHoverHex===c.hex){
         colorHoverFrames++;
       } else {
         colorHoverHex=c.hex;
         colorHoverFrames=1;
       }
-      if (colorHoverFrames>=8 && mobileSelectedColor!==c.hex) {
+      if(colorHoverFrames>=8 && mobileSelectedColor!==c.hex){
         mobileSelectedColor=c.hex;
         showToast(`🎨 ${c.name} selected!`);
       }
-    } else if (!hovered || !isPinching) {
-      if (colorHoverHex===c.hex) {
-        colorHoverHex=null;
-        colorHoverFrames=0;
-      }
+    } else if(!hovered || !isPinching){
+      if(colorHoverHex===c.hex){ colorHoverHex=null; colorHoverFrames=0; }
     }
 
     const isSuggested = suggestedHex && c.hex.toLowerCase()===suggestedHex.toLowerCase();
     const isSelected  = mobileSelectedColor===c.hex;
 
     if(isSuggested){
-      ctx.beginPath(); ctx.arc(cx,cy,swatch/2+7,0,Math.PI*2);
-      ctx.strokeStyle='#ffd93d'; ctx.lineWidth=3;
-      ctx.setLineDash([5,3]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath();ctx.arc(cx,cy,swatch/2+7,0,Math.PI*2);
+      ctx.strokeStyle='#ffd93d';ctx.lineWidth=3;ctx.setLineDash([5,3]);ctx.stroke();ctx.setLineDash([]);
     }
 
-    // Progress arc when pinching on this swatch
-    if (hovered && isPinching && colorHoverHex===c.hex && colorHoverFrames>0) {
-      const prog = Math.min(colorHoverFrames/8, 1);
-      ctx.beginPath();
-      ctx.arc(cx, cy, swatch/2+4, -Math.PI/2, -Math.PI/2 + prog*Math.PI*2);
-      ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.setLineDash([]); ctx.stroke();
+    if(hovered && isPinching && colorHoverHex===c.hex && colorHoverFrames>0){
+      const prog=Math.min(colorHoverFrames/8,1);
+      ctx.beginPath();ctx.arc(cx,cy,swatch/2+4,-Math.PI/2,-Math.PI/2+prog*Math.PI*2);
+      ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.stroke();
     }
 
-    ctx.beginPath(); ctx.arc(cx,cy,swatch/2,0,Math.PI*2);
-    ctx.fillStyle=c.hex; ctx.fill();
+    ctx.beginPath();ctx.arc(cx,cy,swatch/2,0,Math.PI*2);
+    ctx.fillStyle=c.hex;ctx.fill();
     ctx.strokeStyle=isSelected?'#fff':(hovered&&isPinching?'#0f0':'rgba(255,255,255,0.3)');
-    ctx.lineWidth=isSelected?3:1.5; ctx.stroke();
-
+    ctx.lineWidth=isSelected?3:1.5;ctx.stroke();
     ctx.fillStyle='rgba(0,0,0,0.75)';
-    ctx.fillRect(cx-swatch/2, cy+swatch/2+2, swatch, 16);
+    ctx.fillRect(cx-swatch/2,cy+swatch/2+2,swatch,16);
     ctx.fillStyle=isSuggested?'#ffd93d':'#fff';
-    ctx.font=`${isSuggested?'bold ':''} 9px sans-serif`;
-    ctx.textAlign='center';
-    ctx.fillText(isSuggested?'⭐'+c.name:c.name, cx, cy+swatch/2+13);
+    ctx.font=`${isSuggested?'bold ':''} 9px sans-serif`;ctx.textAlign='center';
+    ctx.fillText(isSuggested?'⭐'+c.name:c.name,cx,cy+swatch/2+13);
   });
 }
 
@@ -1606,18 +1796,35 @@ function selectColor(hex, el) {
 }
 function finishColor() {
   if (!mobileSelectedColor) { showToast('Pick a color first! 🎨'); return; }
-  mobileStepTimes.color=(performance.now()-mobileStepStart)/1000;
+  mobileStepTimes.color = (performance.now()-mobileStepStart)/1000; // capture before celebration
   const suggested = mobileItem && mobileItem.color ? mobileItem.color.toLowerCase() : '';
   const picked = mobileSelectedColor.toLowerCase();
   const suggestedInPalette = COLORS.some(c => c.hex.toLowerCase() === suggested);
+  let colorMsg = '🎨 Color chosen!';
   if (picked === suggested || !suggestedInPalette) {
     mobilePtsEarned = Math.min(mobilePtsEarned + 10, 30);
-    showToast('🎉 Perfect color match! +10 pts');
-  } else {
-    showToast('🎨 Color chosen! Match suggested color for full points.');
+    colorMsg = '🎨 Perfect color! +10 pts';
   }
   updateMobileHUD();
-  completeMobileItem();
+  showStepCelebration(`${colorMsg} 🎉`, `All steps done — well done!`, completeMobileItem);
+    showToast('🎨 Color chosen! Match suggested color for full points.');
+}
+
+function showStepCelebration(title, subtitle, callback) {
+  const modal = document.getElementById('mobile-draw-modal');
+  const cel = document.createElement('div');
+  cel.id = 'step-celebration';
+  cel.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);';
+  cel.innerHTML = `
+    <div style="font-size:3rem;margin-bottom:10px;">🎉</div>
+    <div style="font-size:1.5rem;font-weight:900;color:#ffd93d;text-align:center;padding:0 20px;">${title}</div>
+    <div style="font-size:1rem;color:#fff;margin-top:8px;text-align:center;padding:0 20px;">${subtitle}</div>
+  `;
+  modal.appendChild(cel);
+  setTimeout(() => {
+    cel.remove();
+    callback();
+  }, 1500);
 }
 
 async function completeMobileItem() {
@@ -1644,17 +1851,23 @@ async function completeMobileItem() {
   } catch(e){}
 
   await persistState();
-  closeMobileDraw();
-  updateHeaderScore();
-  renderLearnPage();
-  showToast(`🎉 ${mobileItem.name} complete! +${mobilePtsEarned} pts`);
-  triggerConfetti();
+  // Show final congratulations for 2s before closing
+  showStepCelebration(
+    `🏆 ${mobileItem.name} Complete! +${mobilePtsEarned} pts`,
+    `Trace: ${mobileStepTimes.trace?.toFixed(1)}s | Name: ${mobileStepTimes.name?.toFixed(1)}s | Color: ${mobileStepTimes.color?.toFixed(1)}s`,
+    () => {
+      closeMobileDraw();
+      updateHeaderScore();
+      renderLearnPage();
+      triggerConfetti();
+    }
+  );
 }
 
 function closeMobileDraw() {
   if(mobileStream){ mobileStream.getTracks().forEach(t=>t.stop()); mobileStream=null; }
   stopCameraLoop();
-  stopKbCameraLoop();
+  if(typeof stopKbCameraLoop==='function') stopKbCameraLoop();
   document.getElementById('mobile-draw-modal').style.display='none';
 
   document.getElementById('mobile-loading').style.display='flex';

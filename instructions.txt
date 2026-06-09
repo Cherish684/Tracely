@@ -26,11 +26,25 @@ CONTENTS
 Tracely is an interactive learning app where you trace shapes,
 fruits, and vegetables step by step. Each item has 3 steps:
 
-  Step 1 — TRACE    : Follow the dot-to-dot guide
-  Step 2 — NAME IT  : Type or say the name of the item
-  Step 3 — COLOR IT : Pick the correct color
+  Step 1 — TRACE    : Follow the dot-to-dot guide with your finger
+  Step 2 — NAME IT  : Spell or say the name of the item
+  Step 3 — COLOR IT : Pick the correct color from the palette
 
 Complete all 3 steps to earn up to 30 points per item!
+
+ITEM CATALOGUE:
+
+  Shapes     — Easy   : Circle, Square, Triangle, Rectangle
+               Medium : Star, Heart, Diamond, Pentagon, Hexagon
+               Hard   : Octagon, Oval, Arrow, Crescent
+
+  Fruits     — Easy   : Orange
+               Medium : Mango, Apple, Banana
+               Hard   : Pear
+
+  Vegetables — Easy   : Carrot, Potato
+               Medium : Tomato, Eggplant, Mushroom
+               Hard   : Pumpkin
 
 ----------------------------------------------------------------
 2. REQUIREMENTS
@@ -39,11 +53,15 @@ To run Tracely locally you need:
 
   - Python 3.8 or higher
   - pip (Python package manager)
-  - A modern browser (Chrome recommended)
+  - A modern browser (Chrome recommended for best camera support)
 
 Install dependencies by running:
 
     pip install flask flask-cors mediapipe opencv-python numpy
+
+NOTE: The hand_landmarker.task model file (used by the desktop
+CV mode) is downloaded automatically the first time you run
+shape_draw.py. No manual download is needed.
 
 ----------------------------------------------------------------
 3. HOW TO RUN THE APP
@@ -65,145 +83,280 @@ That's it! The app will open on the welcome/login page.
 ----------------------------------------------------------------
 On the welcome page you have 3 options:
 
-  LOG IN      — Enter your existing username and password
-  SIGN UP     — Create a new account (takes 10 seconds)
+  LOG IN        — Enter your existing username and password
+  SIGN UP       — Create a new account (takes 10 seconds)
   PLAY AS GUEST — Jump straight in without an account
                   (progress saved on this device only)
 
 NOTE: Signed-in accounts save progress to the server database
 so your progress is safe even if you switch devices or browsers.
-Guest progress is saved in the browser and may be lost if you
-clear browser data.
+Guest progress is saved in the browser's localStorage and may
+be lost if you clear browser data or cache. When a guest signs
+up for a full account, local progress is automatically imported.
 
 ----------------------------------------------------------------
 5. MODE 1 — BROWSER MODE (Recommended)
 ----------------------------------------------------------------
 This mode works entirely in your browser using your device
-camera (phone, tablet, laptop) or touch screen.
+camera (phone, tablet, laptop) and MediaPipe Hands loaded via
+CDN, or a touch fallback if the camera is unavailable.
 
 HOW TO USE:
 
-  - Click any item card on the Learn page to start
+  - Click any item card on the Learn page to open it
+  - Click the START button to launch the drawing session
   - Allow camera access when prompted
   - Use hand gestures detected by your camera:
 
-      ONE FINGER POINTING  = Draw / trace
-      FIST                 = Stop drawing (lift pen)
+  GESTURE REFERENCE:
 
-  Step 1 — TRACE:
-    Point your finger at each orange dot in order.
-    Connect all dots to complete the shape.
-    Click "Done Tracing" when finished.
+      ☝️  ONE FINGER UP (others folded)  = Draw / trace dots
+      ✌️  TWO FINGERS UP (peace sign)    = Erase mode
+      👍  THUMBS UP (held steady)        = Confirm / submit
+      ✊  FIST                           = Pen lifted (pause)
+      🤌  PINCH (index + thumb close)    = Pick a color (Step 3)
 
-  Step 2 — NAME IT:
-    Type the name of the shape/fruit/vegetable.
-    Or use the microphone button to say the name.
+  A cyan hand skeleton (bones + joints) is drawn over the
+  camera feed in all three steps so you can always see which
+  landmarks are being tracked.
 
-  Step 3 — COLOR IT:
-    Point your finger at a color swatch(the suggested color is depicted using golden circle).
-    Hold your finger still on the color for ~0.25 seconds
-    to confirm the selection (prevents accidental picks).
-    Click "Done Coloring" when happy with your color.
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Step 1 — TRACE
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Point your index finger at each glowing orange dot in order.
+  The line draws itself automatically between dots with a
+  smooth animation. A progress counter shows how many dots
+  you have reached (e.g. "3/12 points").
 
-NO CAMERA? A touch/click fallback is available automatically
-if camera access is denied or unavailable.
+  When all dots are traced, a toast says "All dots traced!"
+  Click "Done Tracing" or hold a thumbs-up gesture over the
+  button to advance.
+
+  IMPORTANT: The Done Tracing button only activates after you
+  have reached at least 50% of the guide dots (minimum 3).
+  This prevents accidentally skipping the trace step.
+
+  Thumbs-up dwell: hold the gesture steadily for about
+  0.8 seconds. A green progress fill shows how close you
+  are to confirming. The counter decays gradually if your
+  gesture wavers briefly — it will not flicker or fire
+  accidentally.
+
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Step 2 — NAME IT
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  A full-screen hover keyboard appears over the camera feed.
+  Hover your index finger over a letter for about 0.6 seconds
+  to select it. A cyan progress fill shows dwell progress.
+
+  Once you have spelled the name, hover your thumb up (👍)
+  to activate the OK button, or use the microphone button to
+  say the name aloud instead.
+
+  If the name is wrong the input clears and you can try again.
+
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Step 3 — COLOR IT
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Pinch your index finger and thumb together over a color
+  swatch (hold for ~0.25 seconds) to select it. The shape
+  outline is shown above the swatches and fills with your
+  chosen color immediately.
+
+  The suggested color is marked with a ⭐ gold dashed ring.
+  Picking the suggested color earns full points. Picking any
+  other color is fine too (and still earns full points if
+  the suggested color is not in the palette).
+
+  Available colors: Red · Orange · Yellow · Green · Blue ·
+  Purple · Pink · Brown · White · Black
+
+  Click "Done Coloring" or hold thumbs-up over the button
+  to confirm your selection and finish the item.
+
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Touch Fallback (no camera)
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  If camera access is denied or unavailable, the app switches
+  automatically to touch/click mode with no extra setup:
+
+  - Tap dots directly on the canvas to trace
+  - 🔄 Reset  — go back to the first dot
+  - 🗑️ Start Over — full reset of the current item
+  - On-screen tap buttons replace all gesture controls
 
 ----------------------------------------------------------------
 6. MODE 2 — CV + MEDIAPIPE DESKTOP MODE (Webcam required)
 ----------------------------------------------------------------
 This mode runs as a separate Python script using OpenCV and
-MediaPipe for more accurate hand tracking via your webcam.
-It opens a full-screen window on your desktop.
+MediaPipe Tasks for high-accuracy hand tracking via your
+webcam. It opens a full-screen window on your desktop.
 
 DIFFERENCE FROM BROWSER MODE:
-  - Higher accuracy hand tracking (runs locally in Python)
-  - Full-screen desktop window instead of browser
+  - Higher-accuracy tracking (MediaPipe Tasks, runs locally)
+  - Full-screen desktop OpenCV window instead of browser
+  - Skeleton display turns bright green on thumbs-up detection
   - Requires a physical webcam connected to your computer
   - Does NOT work on phones/tablets or remote/cloud servers
 
 HOW TO LAUNCH:
   Either click an item card in the browser app (it launches
-  automatically if the Flask server is running), or run it
-  manually from the terminal:
+  automatically when the Flask server is running on localhost),
+  or run it manually from the terminal:
 
       python shape_draw.py --item circle
       python shape_draw.py --item apple
       python shape_draw.py --item triangle
 
-  Replace the item name with any shape, fruit, or vegetable.
+  Replace the item name with any supported item (see list in
+  Section 1). The hand_landmarker.task model is downloaded
+  automatically if it is not already present.
 
-CONTROLS IN CV MODE:
+KEYBOARD CONTROLS IN CV MODE:
 
-      ONE FINGER UP        = Draw mode (trace the dots)
-      TWO FINGERS UP       = Erase mode
-      ENTER key            = Advance to next step
-      R key                = Restart current item
-      S key                = Save screenshot
-      Q or ESC             = Quit
+      Q / ESC       = Quit
+      R             = Restart current item from Step 1
+      S             = Save screenshot (e.g. circle_trace.png)
+      ENTER         = Submit name in the typing box (Step 2)
+      BACKSPACE     = Delete last character in typing box
 
-  Step 1 — TRACE:
-    Point your index finger at the orange dot.
-    Connect all dots in order. Press ENTER when done.
+GESTURE CONTROLS IN CV MODE:
 
-  Step 2 — NAME IT:
-    A typing box appears. Type the item name and press ENTER.
+      ☝️  ONE FINGER UP      = Draw mode — point at next dot
+      ✌️  TWO FINGERS UP     = Erase mode — wipe drawn lines
+      👍  THUMBS UP (held)   = Confirm Done Tracing /
+                               Done Coloring (~18 frames)
 
-  Step 3 — COLOR IT:
-    Point your finger at a color swatch(selected color should be equal to selected color).
-    Hold still on the color for ~0.25 seconds to select it.
-    Selection confirms automatically.
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Step 1 — TRACE (CV mode)
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Point your index finger at the pulsing orange dot. Connect
+  all dots in order; a white line is drawn between them.
+  When all dots are visited a "Done Tracing" button appears.
+  Hold a thumbs-up gesture for ~18 frames to advance.
+  Press R to restart and try again.
 
-SUPPORTED ITEMS IN CV MODE:
-  Shapes    : circle, square, triangle, rectangle, star,
-              heart, diamond, pentagon, hexagon, octagon,
-              oval, arrow, crescent
-  Fruits    : orange, mango, apple, banana, pear
-  Vegetables: carrot, potato, tomato, eggplant, mushroom,
-              pumpkin
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Step 2 — NAME IT (CV mode)
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  A hover keyboard appears. Hover your index finger over a
+  key for ~18 frames to type it. Backspace key (⌫) removes
+  the last character. Once the name is typed, raise your
+  thumb (👍) to trigger OK, or press ENTER on the keyboard.
+  Wrong answers clear the input — try again.
+
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  Step 3 — COLOR IT (CV mode)
+─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+  A palette of 10 color swatches is shown in the center.
+  The suggested color is displayed as a circle in the top-left
+  corner with its name.
+
+  Pinch your index finger and thumb together over a swatch
+  (hold ~8 frames) to select it. The shape thumbnail in the
+  top-right updates to show your chosen color. Then raise
+  your thumb (👍) to confirm with the "Done Coloring" button.
+  Press ESC to quit without saving.
+
+  CV palette colors: Red · Orange · Yellow · Green · Blue ·
+  Purple · Lime · Cyan · Brown · Grey
+
+COMPLETION SIGNAL:
+  When all 3 steps are finished, shape_draw.py writes a file
+  called tracely_signal.json to the project folder. The Flask
+  server polls this automatically and marks the item complete
+  in the browser, awards points, and triggers confetti — no
+  manual refresh needed.
 
 ----------------------------------------------------------------
 7. EARNING POINTS
 ----------------------------------------------------------------
 Each item gives up to 30 points across 3 steps:
 
-  Tracing  — 10 pts (complete the dot-to-dot)
-  Naming   — 10 pts (type/say the correct name)
-  Coloring — 10 pts (pick the suggested color)
-             (if the suggested color is not in the palette,
-              any color you pick earns full points)
+  Tracing  — 10 pts  (reach at least 50% of guide dots,
+                       then confirm with Done Tracing)
+  Naming   — 10 pts  (spell or say the correct name)
+  Coloring — 10 pts  (pick the suggested color)
+             (any color earns full points if the suggested
+              color is not in the palette)
 
-Total points and progress are shown on the Learn page and
-in the Rewards section.
+Total points and a per-step breakdown are shown in the
+Rewards section. Time taken per step is shown in Reports.
 
 ----------------------------------------------------------------
 8. FEATURES OVERVIEW
 ----------------------------------------------------------------
-  LEARN     — Browse and play all items by category
-  REWARDS   — View your points, badges, and achievements
-  REPORTS   — See your time and accuracy stats per item
-  SAVED     — Your favourited items (click ☆ on any card)
-  SETTINGS  — Change theme, manage account, send feedback
+  LEARN     — Browse all items by category (Shapes / Fruits /
+               Vegetables), filtered by Easy / Medium / Hard.
+               Each card shows step badges (T · N · C),
+               progress bar, and points earned.
+
+  REWARDS   — Total points, per-category scores, difficulty
+               level completion bars, and badge collection.
+
+  REPORTS   — Per-item overview table:
+               Icon · Name · Level · Progress · Points ·
+               Time Taken · Status · Favourite
+
+  SAVED     — Your favourited items (click ☆ on any card).
+               Also shows submitted feedback entries.
+
+  THEME     — Dark/light toggle (🌙 / ☀️) in sidebar footer.
+               Saved per user in the database, or in
+               localStorage for guests.
+
+  VOICE     — 🎤 Voice search on the Learn page: say an item
+               name to jump to its card.
+             — Item descriptions read aloud when a card opens.
+             — Microphone button on the Name step as an
+               alternative to the hover keyboard.
+
+  DATA EXPORT — Export all progress data as a JSON file from
+                the Reports page.
+
+  SERVER STATUS — Live indicator in the sidebar footer showing
+                  whether the Flask server is online.
 
 ----------------------------------------------------------------
 9. TROUBLESHOOTING
 ----------------------------------------------------------------
 Camera not working?
   → Make sure you allowed camera permission in the browser
-  → Try Chrome — it has the best camera/MediaPipe support
-  → If it still fails, the touch fallback will activate
+  → Chrome is strongly recommended — best MediaPipe JS support
+  → If it still fails, the touch fallback activates automatically
+
+Thumbs-up firing too easily or not at all?
+  → The gesture requires all four fingers to be folded AND
+    the thumb tip to be above the thumb base. Try holding a
+    clear, exaggerated thumbs-up away from bright backgrounds.
+  → The dwell counter decays gradually rather than resetting
+    instantly, so brief wobbles are forgiven. Hold steady for
+    a full ~0.8 seconds.
+
+Step 1 says "Keep tracing! Reach more dots first"?
+  → You need to reach at least half the guide dots before
+    Done Tracing will activate. Keep pointing at the dots
+    in order until the counter shows 50%+ progress.
 
 Progress not showing after login?
   → Make sure you open the app on http://localhost:5050
-    (not http://127.0.0.1:5050) to avoid cookie issues
+    (not http://127.0.0.1:5050) to avoid cookie issues.
 
 CV mode window not opening?
-  → Make sure Flask server (app.py) is running first
-  → Check that mediapipe and opencv-python are installed
-  → Make sure your webcam is connected and not in use
+  → Make sure the Flask server (app.py) is running first.
+  → Check that mediapipe and opencv-python are installed.
+  → Make sure your webcam is connected and not in use by
+    another application.
+  → The hand_landmarker.task file will download automatically
+    on first run — ensure you have an internet connection.
 
 Server not found?
-  → Confirm app.py is running in the terminal
-  → Check you're visiting http://localhost:5050
+  → Confirm app.py is running in the terminal.
+  → Check you're visiting http://localhost:5050.
+
+Skeleton not visible?
+  → Ensure adequate lighting on your hand.
+  → Try a plain background for better MediaPipe detection.
 
 ================================================================
                    Thank you for using Tracely!
